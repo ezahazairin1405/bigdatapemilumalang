@@ -5,13 +5,13 @@ import {
   clearSessionCookieHeader,
   getSessionUser,
   requireAuth,
+  requireAdmin,
 } from "./auth.js";
 import { json } from "./utils.js";
 import { listThemes, createTheme } from "./routes/themes.js";
 import { listDocuments, createDocument, updateDocument, deleteDocument } from "./routes/documents.js";
 import { saveTpsVotes, listTpsVotes } from "./routes/tps.js";
 import { getKelurahanBoundaries } from "./routes/geo.js";
-import { putDocumentFile, getDocumentFile } from "./routes/files.js";
 
 export default {
   async fetch(request, env) {
@@ -34,7 +34,11 @@ export default {
       }
       if (pathname === "/api/session" && request.method === "GET") {
         const user = await getSessionUser(request, env);
-        return json({ authenticated: !!user, username: user?.username || null });
+        return json({
+          authenticated: !!user,
+          username: user?.username || null,
+          role: user?.role || null,
+        });
       }
 
       // --- Semua rute /api/* di bawah ini wajib login ---
@@ -42,15 +46,26 @@ export default {
         const { user, response } = await requireAuth(request, env);
         if (!user) return response;
 
+        // GET boleh diakses admin maupun user biasa (buat tanya-jawab/infografis).
         if (pathname === "/api/themes" && request.method === "GET") {
           return await listThemes(env);
         }
-        if (pathname === "/api/themes" && request.method === "POST") {
-          return await createTheme(request, env);
-        }
-
         if (pathname === "/api/documents" && request.method === "GET") {
           return await listDocuments(request, env);
+        }
+        if (pathname === "/api/tps-votes" && request.method === "GET") {
+          return await listTpsVotes(request, env);
+        }
+        if (pathname === "/api/geo/kelurahan" && request.method === "GET") {
+          return await getKelurahanBoundaries(request);
+        }
+
+        // Sisanya (buat/ubah/hapus tema, dokumen, data TPS) khusus admin.
+        const adminBlock = requireAdmin(user);
+        if (adminBlock) return adminBlock;
+
+        if (pathname === "/api/themes" && request.method === "POST") {
+          return await createTheme(request, env);
         }
         if (pathname === "/api/documents" && request.method === "POST") {
           return await createDocument(request, env);
@@ -62,24 +77,8 @@ export default {
         if (docMatch && request.method === "DELETE") {
           return await deleteDocument(env, docMatch[1]);
         }
-
-        const fileMatch = pathname.match(/^\/api\/documents\/(\d+)\/file$/);
-        if (fileMatch && request.method === "PUT") {
-          return await putDocumentFile(request, env, fileMatch[1]);
-        }
-        if (fileMatch && request.method === "GET") {
-          return await getDocumentFile(env, fileMatch[1]);
-        }
-
-        if (pathname === "/api/tps-votes" && request.method === "GET") {
-          return await listTpsVotes(request, env);
-        }
         if (pathname === "/api/tps-votes" && request.method === "POST") {
           return await saveTpsVotes(request, env);
-        }
-
-        if (pathname === "/api/geo/kelurahan" && request.method === "GET") {
-          return await getKelurahanBoundaries(request);
         }
 
         return json({ error: "Rute API tidak ditemukan." }, 404);
@@ -100,7 +99,7 @@ async function handleLogin(request, env) {
   }
 
   const user = await env.DB.prepare(
-    "SELECT id, username, password_hash FROM users WHERE username = ?"
+    "SELECT id, username, password_hash, role FROM users WHERE username = ?"
   ).bind(username).first();
 
   if (!user || !(await verifyPassword(password, user.password_hash))) {
@@ -108,7 +107,7 @@ async function handleLogin(request, env) {
   }
 
   const { token, expiresAt } = await createSession(env, user.id);
-  return new Response(JSON.stringify({ success: true, username: user.username }), {
+  return new Response(JSON.stringify({ success: true, username: user.username, role: user.role }), {
     status: 200,
     headers: {
       "content-type": "application/json",

@@ -77,7 +77,7 @@ export async function getSessionUser(request, env) {
   if (!token) return null;
 
   const row = await env.DB.prepare(
-    `SELECT s.token, s.user_id, s.expires_at, u.username
+    `SELECT s.token, s.user_id, s.expires_at, u.username, u.role
      FROM sessions s JOIN users u ON u.id = s.user_id
      WHERE s.token = ?`
   ).bind(token).first();
@@ -87,7 +87,7 @@ export async function getSessionUser(request, env) {
     await env.DB.prepare("DELETE FROM sessions WHERE token = ?").bind(token).run();
     return null;
   }
-  return { id: row.user_id, username: row.username, token: row.token };
+  return { id: row.user_id, username: row.username, role: row.role, token: row.token };
 }
 
 export async function requireAuth(request, env) {
@@ -99,4 +99,15 @@ export async function requireAuth(request, env) {
     }) };
   }
   return { user, response: null };
+}
+
+// Dipakai untuk rute yang cuma boleh diakses admin (upload, kelola tema/dokumen).
+export function requireAdmin(user) {
+  if (user.role !== "admin") {
+    return new Response(JSON.stringify({ error: "Hanya admin yang boleh melakukan ini." }), {
+      status: 403,
+      headers: { "content-type": "application/json" },
+    });
+  }
+  return null;
 }
