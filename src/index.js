@@ -8,7 +8,7 @@ import {
 } from "./auth.js";
 import { json } from "./utils.js";
 import { listThemes, createTheme } from "./routes/themes.js";
-import { listDocuments, createDocument, updateDocument } from "./routes/documents.js";
+import { listDocuments, createDocument, updateDocument, deleteDocument } from "./routes/documents.js";
 import { saveTpsVotes, listTpsVotes } from "./routes/tps.js";
 import { getKelurahanBoundaries } from "./routes/geo.js";
 
@@ -57,6 +57,9 @@ export default {
         const docMatch = pathname.match(/^\/api\/documents\/(\d+)$/);
         if (docMatch && request.method === "PATCH") {
           return await updateDocument(request, env, docMatch[1]);
+        }
+        if (docMatch && request.method === "DELETE") {
+          return await deleteDocument(env, docMatch[1]);
         }
 
         if (pathname === "/api/tps-votes" && request.method === "GET") {
