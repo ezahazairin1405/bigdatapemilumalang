@@ -12,6 +12,7 @@ import { listThemes, createTheme } from "./routes/themes.js";
 import { listDocuments, createDocument, updateDocument, deleteDocument } from "./routes/documents.js";
 import { saveTpsVotes, listTpsVotes } from "./routes/tps.js";
 import { getKelurahanBoundaries } from "./routes/geo.js";
+import { proxyOpenAiCompatible, proxyClaude } from "./routes/aiproxy.js";
 
 export default {
   async fetch(request, env) {
@@ -58,6 +59,15 @@ export default {
         }
         if (pathname === "/api/geo/kelurahan" && request.method === "GET") {
           return await getKelurahanBoundaries(request);
+        }
+        if (pathname === "/api/proxy/groq" && request.method === "POST") {
+          return await proxyOpenAiCompatible(request, "https://api.groq.com/openai/v1");
+        }
+        if (pathname === "/api/proxy/grok" && request.method === "POST") {
+          return await proxyOpenAiCompatible(request, "https://api.x.ai/v1");
+        }
+        if (pathname === "/api/proxy/claude" && request.method === "POST") {
+          return await proxyClaude(request);
         }
 
         // Sisanya (buat/ubah/hapus tema, dokumen, data TPS) khusus admin.
