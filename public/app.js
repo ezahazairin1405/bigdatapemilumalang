@@ -170,6 +170,9 @@ function setupTab1() {
     const created = await api.createDocument(themeId, file.name);
     if (created.error) { setStatus(row, "gagal", "gagal simpan"); return; }
     const docId = created.id;
+    if (created.replaced) {
+      row.querySelector(".name").innerHTML = `${escapeHtml(file.name)} <span style="color:var(--amber);font-size:0.72rem;">(menimpa versi lama)</span>`;
+    }
 
     try {
       const result = await geminiClassifyPdf(file, themeName(themeId));
