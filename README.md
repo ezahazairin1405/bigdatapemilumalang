@@ -37,22 +37,23 @@ dan analisis peta/grafik (Infografis) per tema — cakupan pemilu se-Indonesia.
 
 ## Catatan penting soal 4 provider AI
 
-- **Gemini** -- tetap yang utama, dukung baca PDF hasil scan (fallback transkrip).
-- **Claude** -- dipanggil langsung dari browser pakai header khusus
-  (`anthropic-dangerous-direct-browser-access`) yang memang disediakan Anthropic
-  untuk kebutuhan seperti ini. Sama seperti Gemini, key-nya ada di browser
-  Anda, bukan di server. Juga bisa baca PDF hasil scan.
-- **Groq** -- teks saja (tidak dipakai untuk transkrip PDF hasil scan), tapi
-  sangat cepat. **Catatan jujur**: kuota gratis Groq per menit (TPM) untuk
-  model yang cukup besar untuk tugas ini relatif kecil dibanding Gemini/Claude
-  -- jadi untuk tema dengan BANYAK dokumen (semua dikirim utuh, ingat), Groq
+- **Gemini** -- dipanggil langsung dari browser (mengizinkan CORS). Satu-satunya
+  yang dipakai untuk fallback transkrip PDF hasil scan bersama Claude.
+- **Claude, Groq, Grok** -- ketiganya **tidak** mengizinkan dipanggil langsung
+  dari browser (kena CORS), jadi diteruskan lewat proxy di Worker kita sendiri
+  (`src/routes/aiproxy.js`, endpoint `/api/proxy/claude`, `/api/proxy/groq`,
+  `/api/proxy/grok`). Key API tetap dikirim dari browser Anda tiap pertanyaan
+  (tidak disimpan permanen di server) -- Worker cuma meneruskan permintaannya
+  supaya tidak diblokir CORS, bukan menyimpan key-nya.
+- **Groq**: **Catatan jujur**: kuota gratis Groq per menit (TPM) untuk model
+  yang cukup besar untuk tugas ini relatif kecil dibanding Gemini/Claude --
+  jadi untuk tema dengan BANYAK dokumen (semua dikirim utuh, ingat), Groq
   mungkin tetap kena limit duluan. Tetap berguna sebagai lapisan cadangan,
   terutama untuk tema yang belum terlalu banyak dokumennya.
-- **Grok (xAI)** -- juga teks saja (bukan bagian fallback transkrip PDF scan).
-  Model andalannya (`grok-4.3`) punya jendela konteks besar (1 juta token),
-  jadi cocok untuk tema dengan banyak dokumen sekaligus -- tapi belum sempat
-  diverifikasi seberapa besar jatah gratisnya di 2026, jadi anggap ini
-  cadangan yang perlu dicoba sendiri dulu.
+- **Grok (xAI)**: model andalannya (`grok-4.3`) punya jendela konteks besar
+  (1 juta token), jadi cocok untuk tema dengan banyak dokumen sekaligus --
+  perlu ada kredit/billing aktif di akun xAI-nya dulu sebelum key bisa dipakai
+  (beda dari Gemini/Groq yang punya jatah gratis tanpa perlu isi saldo).
 - Kalau mau kapasitas yang benar-benar bertambah (bukan cuma "kelihatan" ada
   banyak key), pastikan key Gemini/Claude/Groq/Grok Anda masing-masing dari
   **akun yang benar-benar berbeda** -- kuota dihitung per akun/project, bukan
