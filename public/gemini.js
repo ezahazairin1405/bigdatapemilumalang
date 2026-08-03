@@ -1,11 +1,13 @@
-// Semua panggilan Gemini dilakukan langsung dari browser (bukan lewat Worker),
-// memakai key yang diinput user sendiri, dengan rotasi otomatis kalau satu
-// key kena limit kuota -- pola yang sama seperti web pengolahan data.
+// Ekstraksi teks PDF dilakukan di browser pakai pdf.js (library resmi Mozilla),
+// BUKAN diketik ulang oleh Gemini -- supaya angka di tabel akurat 100% (persis
+// dari lapisan teks PDF-nya), bukan hasil "baca lalu tulis ulang" AI yang rawan
+// salah ketik untuk dokumen berisi banyak angka.
+// Gemini cuma dipakai untuk: (1) fallback transkrip kalau PDF ternyata hasil
+// scan/gambar (tidak ada lapisan teks), (2) ekstrak tabel suara TPS dari teks
+// yang sudah didapat, (3) menjawab pertanyaan di Tab 2/3.
 //
-// Pakai alias resmi Google yang selalu mengarah ke versi Flash stabil
-// terbaru (otomatis berpindah tiap Google merilis model baru, dengan
-// pemberitahuan 2 minggu sebelum perubahan besar) -- lebih tahan lama
-// dibanding menulis nama model versi tertentu yang bisa dipensiunkan.
+// [VERIFIKASI] Nama model di bawah ini sebaiknya dicek ulang terhadap model
+// Gemini yang aktif saat ini.
 const GEMINI_MODEL = "gemini-flash-latest";
 const GEMINI_ENDPOINT = (model, key) =>
   `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
@@ -33,8 +35,6 @@ const geminiKeys = {
   },
 };
 
-// Memanggil Gemini generateContent, rotasi ke key berikutnya kalau kena 429 /
-// error kuota. `parts` adalah array content parts (teks dan/atau inline PDF).
 async function callGemini(parts, { json = false, systemInstruction } = {}) {
   const keys = geminiKeys.list();
   if (!keys.length) {
@@ -52,9 +52,6 @@ async function callGemini(parts, { json = false, systemInstruction } = {}) {
   let lastError;
   for (let i = 0; i < keys.length; i++) {
     const key = keys[i];
-
-    // Jeda kecil sebelum percobaan ke-2 dst, supaya tidak langsung membombardir
-    // API begitu satu key kena limit (mempercepat key lain ikut kena limit juga).
     if (i > 0) await sleep(1200 * i);
 
     try {
@@ -65,7 +62,6 @@ async function callGemini(parts, { json = false, systemInstruction } = {}) {
       });
 
       if (res.status === 429 || res.status === 403 || res.status === 500 || res.status === 503) {
-        // Kena limit/kuota/overload sementara -- coba key berikutnya.
         lastError = new Error(`Key #${i + 1} gagal (status ${res.status}).`);
         continue;
       }
@@ -85,7 +81,6 @@ async function callGemini(parts, { json = false, systemInstruction } = {}) {
       return json ? safeParseJson(text) : text;
     } catch (err) {
       lastError = err;
-      // 404 (nama model salah) akan sama untuk semua key -- tidak perlu diulang.
       if (err.message.includes("tidak ditemukan (404)")) throw err;
     }
   }
@@ -100,8 +95,7 @@ function safeParseJson(text) {
   try {
     return JSON.parse(text);
   } catch {
-    // Kadang model membungkus JSON dengan ```json ... ``` walau sudah diminta JSON murni.
-    const match = text.match(/\{[\s\S]*\}/);
+    const match = text.match(/[\{\[][\s\S]*[\}\]]/);
     if (match) {
       try { return JSON.parse(match[0]); } catch {}
     }
@@ -120,119 +114,140 @@ async function fileToBase64(file) {
   return btoa(binary);
 }
 
-// --- Pilih dokumen paling relevan dari daftar ringkasan, lalu lampirkan
-// file PDF ASLINYA (bukan cuma ringkasan) supaya Gemini bisa baca angka
-// rinci -- dipakai bareng oleh Tab 2 (Elaborasi) dan Tab 3 (Infografis).
-async function pickAndAttachRelevantDocs(documentSummaries, question, maxDocs = 4) {
-  if (!documentSummaries.length) return { fileParts: [], relevantIds: [] };
+// --- Ekstraksi teks PDF pakai pdf.js, dengan rekonstruksi baris berdasarkan
+// posisi (Y lalu X) supaya tabel tidak berantakan urutan kata/angkanya. ---
+async function extractPdfTextViaPdfJs(file) {
+  const buf = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+  let fullText = "";
 
-  const list = documentSummaries
-    .map((d) => `ID ${d.id}: ${d.original_name} — ${d.summary || "(belum diringkas)"}`)
-    .join("\n");
+  for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+    const page = await pdf.getPage(pageNum);
+    const content = await page.getTextContent();
 
-  const pickPrompt = `Daftar dokumen yang tersedia di tema ini:
-${list}
+    const items = content.items.map((it) => ({
+      text: it.str,
+      x: it.transform[4],
+      y: it.transform[5],
+    }));
 
-Pertanyaan: ${question}
+    const lineTolerance = 2;
+    const lines = [];
+    items.forEach((it) => {
+      let line = lines.find((l) => Math.abs(l.y - it.y) < lineTolerance);
+      if (!line) { line = { y: it.y, items: [] }; lines.push(line); }
+      line.items.push(it);
+    });
+    lines.sort((a, b) => b.y - a.y);
 
-Dari daftar ID di atas, pilih maksimal ${maxDocs} ID dokumen yang PALING relevan untuk menjawab
-pertanyaan ini secara rinci (misal kalau pertanyaan menyebut wilayah/dapil/partai/jenis pemilihan
-tertentu, pilih dokumen yang paling cocok dengan itu). Balas HANYA JSON: {"ids": [1,2,3]}`;
+    const pageText = lines
+      .map((l) => l.items.sort((a, b) => a.x - b.x).map((it) => it.text).join(" "))
+      .join("\n");
 
-  let relevantIds;
-  try {
-    const picked = await callGemini([{ text: pickPrompt }], { json: true });
-    relevantIds = (picked.ids || []).map(String);
-  } catch {
-    relevantIds = documentSummaries.slice(0, maxDocs).map((d) => String(d.id));
+    fullText += `\n--- Halaman ${pageNum} ---\n${pageText}`;
   }
-  if (!relevantIds.length) relevantIds = documentSummaries.slice(0, maxDocs).map((d) => String(d.id));
 
-  const fileParts = [];
-  for (const id of relevantIds) {
-    try {
-      const base64 = await api.getDocumentFileBase64(id);
-      const doc = documentSummaries.find((d) => String(d.id) === String(id));
-      fileParts.push({ text: `--- Dokumen asli: ${doc?.original_name || id} ---` });
-      fileParts.push({ inline_data: { mime_type: "application/pdf", data: base64 } });
-    } catch {
-      // File belum ada di R2 (misal diunggah sebelum fitur ini aktif) -- lewati saja,
-      // nanti tetap ada ringkasannya di konteks teks.
-    }
-  }
-  return { fileParts, relevantIds };
+  return fullText.trim();
 }
 
-// --- Tab 1: klasifikasi & ringkasan 1 file PDF, dalam lingkup 1 tema ---
-async function geminiClassifyPdf(file, themeName) {
+// Fallback KHUSUS untuk PDF hasil scan/gambar (tidak ada lapisan teks sama
+// sekali) -- baru di sini Gemini dipakai untuk transkrip, karena memang tidak
+// ada cara lain membaca teksnya.
+async function geminiTranscribePdf(file) {
   const base64 = await fileToBase64(file);
-  const prompt = `Dokumen ini termasuk dalam tema "${themeName}" (tema sudah ditentukan manusia, JANGAN diubah).
-Baca isi PDF ini dan kembalikan JSON dengan struktur persis:
-{
-  "summary": "ringkasan isi dokumen 3-6 kalimat, bahasa Indonesia",
-  "extracted_data": {
-    "angka_penting": [ {"label": "...", "nilai": "...", "satuan": "..."} ],
-    "catatan": "hal lain yang relevan untuk dianalisis nanti, kalau ada"
-  }
-}
-Kalau dokumen berisi tabel hasil suara per TPS/partai, sertakan juga field "tps_votes" berupa array:
-[{"provinsi":"","kabupaten":"","kecamatan":"","kelurahan":"","tps_no":"","party_votes":{"Partai A": 0}}]
-Kalau tidak ada data TPS, boleh tidak menyertakan field "tps_votes" sama sekali.
-Balas HANYA JSON, tanpa markdown.`;
+  const prompt = `Dokumen ini kemungkinan hasil scan (tidak ada lapisan teks yang bisa diekstrak langsung).
+Transkrip SELURUH isi dokumen ini apa adanya, termasuk semua angka di tabel, judul, dan catatan kaki.
+Jangan meringkas, jangan menghilangkan bagian apa pun, pertahankan urutan tabel/kolom semirip
+mungkin dengan aslinya. Balas HANYA teks transkripnya saja, tanpa komentar tambahan.`;
 
   return callGemini(
     [
       { inline_data: { mime_type: "application/pdf", data: base64 } },
       { text: prompt },
     ],
-    { json: true }
+    { json: false }
   );
 }
 
-// --- Tab 2: tanya-jawab, dengan PDF asli dokumen relevan dilampirkan utuh ---
-async function geminiAsk(themeName, documentSummaries, question) {
-  const { fileParts, relevantIds } = await pickAndAttachRelevantDocs(documentSummaries, question);
+// Fungsi utama dipanggil dari Tab 1: ekstrak teks LENGKAP (bukan ringkasan).
+async function extractDocumentText(file) {
+  let fullText = "";
+  try {
+    fullText = await extractPdfTextViaPdfJs(file);
+  } catch {
+    fullText = "";
+  }
 
-  const otherContext = documentSummaries
-    .filter((d) => !relevantIds.includes(String(d.id)))
-    .map((d) => `- ${d.original_name}: ${d.summary || "(belum diringkas)"}`)
-    .join("\n");
+  const isSparse = !fullText || fullText.replace(/\s/g, "").length < 200;
+  if (isSparse) {
+    fullText = await geminiTranscribePdf(file);
+  }
+  return fullText;
+}
 
-  const prompt = `Tema: ${themeName}
+// Opsional: kalau teks dokumen mengandung tabel suara per TPS, ekstrak jadi
+// data terstruktur untuk Tab Infografis. Gagal/tidak relevan -> array kosong,
+// tidak menggagalkan keseluruhan proses upload.
+async function geminiExtractTpsVotes(fullText, themeNameValue) {
+  const prompt = `Tema: ${themeNameValue}
 
-${fileParts.length ? "Dokumen paling relevan sudah dilampirkan LENGKAP di atas -- baca isinya rinci, termasuk angka di tabel." : "Tidak ada dokumen yang bisa dilampirkan utuh untuk pertanyaan ini."}
+Berikut isi teks lengkap sebuah dokumen pemilu:
+"""
+${fullText.slice(0, 150000)}
+"""
 
-Dokumen lain di tema ini (belum dilampirkan, cuma ringkasan singkat):
-${otherContext || "(tidak ada dokumen lain)"}
+Kalau dokumen ini berisi tabel hasil suara per TPS dan/atau per partai, ekstrak jadi JSON array
+dengan struktur persis:
+[{"provinsi":"","kabupaten":"","kecamatan":"","kelurahan":"","tps_no":"","party_votes":{"Partai A": 0}}]
+Kalau TIDAK ada data semacam itu di dokumen ini, balas array kosong: []
+Balas HANYA JSON array tersebut, tanpa markdown apa pun.`;
+
+  try {
+    const result = await callGemini([{ text: prompt }], { json: true });
+    return Array.isArray(result) ? result : [];
+  } catch {
+    return [];
+  }
+}
+
+// --- Tab 2: tanya-jawab, SEMUA dokumen di tema dikirim utuh (bukan ringkasan,
+// bukan pilih-pilih relevansi) ---
+async function geminiAsk(themeNameValue, documents, question) {
+  const context = documents
+    .filter((d) => d.full_text)
+    .map((d) => `=== Dokumen: ${d.original_name} ===\n${d.full_text}`)
+    .join("\n\n");
+
+  const prompt = `Tema: ${themeNameValue}
+
+Berikut seluruh isi dokumen yang tersedia di tema ini (teks lengkap, bukan ringkasan):
+
+${context || "(belum ada dokumen dengan isi yang berhasil diekstrak)"}
 
 Pertanyaan: ${question}
 
-Jawab dalam bahasa Indonesia berdasarkan dokumen yang dilampirkan (utamakan ini untuk angka rinci)
-dan ringkasan di atas. Kalau informasi tetap tidak cukup meski sudah membaca dokumen lengkap,
-katakan terus terang bagian mana yang kurang.`;
+Jawab dalam bahasa Indonesia berdasarkan isi dokumen di atas secara rinci dan akurat, termasuk
+angka-angka spesifik kalau ditanya. Kalau informasi tidak ditemukan di dokumen manapun di atas,
+katakan terus terang bagian mana yang tidak tersedia.`;
 
-  return callGemini([...fileParts, { text: prompt }], { json: false });
+  return callGemini([{ text: prompt }], { json: false });
 }
 
 // --- Tab 3: analisis infografis (data aktual + estimasi AI, untuk chart & peta) ---
-async function geminiInfografis(themeName, documentSummaries, tpsRows, question) {
-  const { fileParts, relevantIds } = await pickAndAttachRelevantDocs(documentSummaries, question);
+async function geminiInfografis(themeNameValue, documents, tpsRows, question) {
+  const context = documents
+    .filter((d) => d.full_text)
+    .map((d) => `=== Dokumen: ${d.original_name} ===\n${d.full_text}`)
+    .join("\n\n");
 
-  const otherContext = documentSummaries
-    .filter((d) => !relevantIds.includes(String(d.id)))
-    .map((d) => `- ${d.original_name}: ${d.summary || "(belum diringkas)"}`)
-    .join("\n");
+  const tpsSample = JSON.stringify(tpsRows);
 
-  const tpsSample = JSON.stringify(tpsRows.slice(0, 200)); // batasi ukuran prompt
+  const prompt = `Tema: ${themeNameValue}
 
-  const prompt = `Tema: ${themeName}
+Seluruh isi dokumen di tema ini (teks lengkap):
+${context || "(tidak ada)"}
 
-${fileParts.length ? "Dokumen paling relevan sudah dilampirkan LENGKAP di atas -- baca angka rinci di tabelnya." : "Tidak ada dokumen yang bisa dilampirkan utuh untuk pertanyaan ini."}
-
-Dokumen lain di tema ini (belum dilampirkan, cuma ringkasan):
-${otherContext || "(tidak ada)"}
-
-Data suara per TPS yang tersedia (JSON, sebagian bisa terpotong kalau banyak):
+Data suara per TPS yang tersedia (JSON):
 ${tpsSample || "[]"}
 
 Pertanyaan analitis: ${question}
@@ -256,5 +271,5 @@ ATURAN PENTING:
 - Kalau tidak relevan menampilkan peta untuk pertanyaan ini, kembalikan "map_points": [].
 - Balas HANYA JSON, tanpa markdown.`;
 
-  return callGemini([...fileParts, { text: prompt }], { json: true });
+  return callGemini([{ text: prompt }], { json: true });
 }

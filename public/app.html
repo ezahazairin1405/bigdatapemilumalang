@@ -101,6 +101,18 @@
     font-size:0.82rem;
   }
   .queue-item .name{flex:1;font-family:'IBM Plex Mono';word-break:break-word;}
+  .row-delete{
+    background:transparent;
+    border:1px solid var(--border);
+    color:var(--text-muted);
+    width:24px;height:24px;
+    border-radius:6px;
+    cursor:pointer;
+    font-size:0.8rem;
+    line-height:1;
+    flex-shrink:0;
+  }
+  .row-delete:hover{color:var(--danger);border-color:var(--danger);}
   .status-pill{
     font-family:'IBM Plex Mono';
     font-size:0.65rem;
@@ -134,7 +146,8 @@
     font-size:0.82rem;
     margin-bottom:6px;
   }
-  .doc-card .fname{font-family:'IBM Plex Mono';}
+  .doc-card-row{display:flex;align-items:center;gap:10px;}
+  .doc-card .fname{font-family:'IBM Plex Mono';flex:1;}
   .doc-card .summary{color:var(--text-muted);margin-top:3px;}
 
   /* ---------- Tab 2 & 3: pemilihan tema kerja ---------- */
@@ -273,6 +286,12 @@
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script>
+  // Worker pdf.js -- versinya harus sama dengan script di atas.
+  pdfjsLib.GlobalWorkerOptions.workerSrc =
+    "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+</script>
 <script src="/api.js"></script>
 <script src="/gemini.js"></script>
 <script src="/app.js"></script>

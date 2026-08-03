@@ -1,5 +1,6 @@
 // ================= Sesi & navigasi dasar =================
 let currentUser = null;
+let currentRole = null;
 let themesCache = [];
 
 (async function init() {
@@ -9,7 +10,18 @@ let themesCache = [];
     return;
   }
   currentUser = session.username;
-  document.getElementById("userChip").textContent = currentUser;
+  currentRole = session.role;
+  document.getElementById("userChip").textContent = `${currentUser} (${currentRole})`;
+
+  // Tab Input Data cuma untuk admin.
+  if (currentRole !== "admin") {
+    const inputTabBtn = document.querySelector('.tab-btn[data-tab="input"]');
+    if (inputTabBtn) inputTabBtn.remove();
+    document.getElementById("tab-input")?.remove();
+    // Kalau tab aktif defaultnya input, pindah ke Elaborasi.
+    document.querySelector('.tab-btn[data-tab="elaborasi"]')?.classList.add("active");
+    document.getElementById("tab-elaborasi")?.classList.add("active");
+  }
 
   document.getElementById("logoutBtn").addEventListener("click", async () => {
     await api.logout();
@@ -19,7 +31,7 @@ let themesCache = [];
   setupTabs();
   setupKeyModal();
   await refreshThemes();
-  setupTab1();
+  if (currentRole === "admin") setupTab1();
   setupTab2();
   setupTab3();
 })();
@@ -83,6 +95,7 @@ async function refreshThemes() {
 
   for (const id of ["themeSelect", "elaborasiThemeSelect", "infografisThemeSelect"]) {
     const el = document.getElementById(id);
+    if (!el) continue;
     const current = el.value;
     el.innerHTML = `<option value="">— Pilih tema —</option>` + options;
     if (current) el.value = current;
@@ -98,7 +111,7 @@ function themeName(id) {
   return t ? t.name : "(tema tidak dikenal)";
 }
 
-// ================= TAB 1: Input Data =================
+// ================= TAB 1: Input Data (khusus admin) =================
 function setupTab1() {
   const dropzone = document.getElementById("dropzone");
   const fileInput = document.getElementById("fileInput");
@@ -138,7 +151,12 @@ function setupTab1() {
   function enqueueFile(file, themeId) {
     const row = document.createElement("div");
     row.className = "queue-item";
-    row.innerHTML = `<span class="name">${escapeHtml(file.name)}</span><span class="status-pill status-menunggu">menunggu</span>`;
+    row.innerHTML = `
+      <span class="name">${escapeHtml(file.name)}</span>
+      <span class="status-pill status-menunggu">menunggu</span>
+      <button class="row-delete" title="Hapus dari antrian">✕</button>
+    `;
+    row.querySelector(".row-delete").addEventListener("click", () => row.remove());
     queueList.prepend(row);
     queue.push({ file, themeId, row });
     processQueue();
@@ -156,8 +174,6 @@ function setupTab1() {
     while (queue.length) {
       const item = queue.shift();
       await processOne(item);
-      // Jeda antar file supaya tidak membombardir Gemini API (rawan kena rate limit
-      // kalau banyak PDF diunggah sekaligus).
       if (queue.length) await new Promise((r) => setTimeout(r, 1500));
     }
     queueBusy = false;
@@ -170,30 +186,22 @@ function setupTab1() {
     const created = await api.createDocument(themeId, file.name);
     if (created.error) { setStatus(row, "gagal", "gagal simpan"); return; }
     const docId = created.id;
-    if (created.replaced) {
-      row.querySelector(".name").innerHTML = `${escapeHtml(file.name)} <span style="color:var(--amber);font-size:0.72rem;">(menimpa versi lama)</span>`;
-    }
 
     try {
-      const result = await geminiClassifyPdf(file, themeName(themeId));
-      await api.updateDocument(docId, {
-        status: "selesai",
-        summary: result.summary || "",
-        extracted_data: result.extracted_data || {},
-      });
-      if (Array.isArray(result.tps_votes) && result.tps_votes.length) {
-        await api.saveTpsVotes(themeId, docId, "pdf", result.tps_votes);
+      const fullText = await extractDocumentText(file);
+      await api.updateDocument(docId, { status: "selesai", full_text: fullText });
+
+      // Ekstrak data suara TPS kalau ada -- tidak menggagalkan upload kalau kosong.
+      const tpsRows = await geminiExtractTpsVotes(fullText, themeName(themeId));
+      if (tpsRows.length) {
+        await api.saveTpsVotes(themeId, docId, "pdf", tpsRows);
       }
-      // Simpan file PDF aslinya juga (bukan cuma ringkasannya), supaya nanti
-      // di Tab 2/3 bisa dibaca ulang utuh untuk pertanyaan yang butuh angka rinci.
-      await api.uploadDocumentFile(docId, file);
       setStatus(row, "selesai");
     } catch (err) {
-      // File gagal tidak perlu direkam -- hapus dari database, tampilkan
-      // sebentar di antrian sebagai penanda, lalu hilang otomatis.
-      await api.deleteDocument(docId);
+      // TIDAK dihapus otomatis lagi -- tetap tercatat status gagal, dihapus
+      // manual lewat tombol ✕ kalau memang mau, bisa juga diunggah ulang.
+      await api.updateDocument(docId, { status: "gagal", error_message: err.message });
       setStatus(row, "gagal", "gagal — " + err.message.slice(0, 40));
-      setTimeout(() => row.remove(), 3000);
     }
   }
 
@@ -203,10 +211,9 @@ function setupTab1() {
 
 async function renderThemeGroups() {
   const container = document.getElementById("themeGroups");
+  if (!container) return;
   container.innerHTML = "";
   for (const theme of themesCache) {
-    if (!theme.document_count) continue;
-
     const group = document.createElement("div");
     group.className = "theme-group";
 
@@ -223,6 +230,32 @@ async function renderThemeGroups() {
     body.style.display = "none";
 
     let loaded = false;
+    async function loadDocs() {
+      body.innerHTML = `<div class="empty-hint">Memuat…</div>`;
+      const docs = await api.listDocuments(theme.id);
+      body.innerHTML = "";
+      docs.forEach((d) => {
+        const card = document.createElement("div");
+        card.className = "doc-card";
+        card.innerHTML = `
+          <div class="doc-card-row">
+            <div class="fname">${escapeHtml(d.original_name)} — <span class="status-pill status-${d.status}">${d.status}</span></div>
+            <button class="row-delete" title="Hapus dokumen ini">✕</button>
+          </div>
+          ${d.error_message ? `<div class="summary" style="color:var(--danger);">${escapeHtml(d.error_message)}</div>` : ""}
+          ${d.full_text ? `<div class="summary">${escapeHtml(d.full_text.slice(0, 220))}${d.full_text.length > 220 ? "…" : ""}</div>` : ""}
+        `;
+        card.querySelector(".row-delete").addEventListener("click", async () => {
+          if (!confirm(`Hapus "${d.original_name}" secara permanen?`)) return;
+          await api.deleteDocument(d.id);
+          await refreshThemes();
+          await renderThemeGroups();
+        });
+        body.appendChild(card);
+      });
+      loaded = true;
+    }
+
     header.addEventListener("click", async () => {
       const isOpen = body.style.display !== "none";
       if (isOpen) {
@@ -232,21 +265,7 @@ async function renderThemeGroups() {
       }
       header.querySelector(".chevron").textContent = "▾";
       body.style.display = "block";
-      if (!loaded) {
-        body.innerHTML = `<div class="empty-hint">Memuat…</div>`;
-        const docs = (await api.listDocuments(theme.id)).filter((d) => d.status !== "gagal");
-        body.innerHTML = "";
-        docs.forEach((d) => {
-          const card = document.createElement("div");
-          card.className = "doc-card";
-          card.innerHTML = `
-            <div class="fname">${escapeHtml(d.original_name)} — <span class="status-pill status-${d.status}">${d.status}</span></div>
-            ${d.summary ? `<div class="summary">${escapeHtml(d.summary)}</div>` : ""}
-          `;
-          body.appendChild(card);
-        });
-        loaded = true;
-      }
+      if (!loaded) await loadDocs();
     });
 
     group.appendChild(header);
@@ -281,7 +300,7 @@ function setupTab2() {
     if (!question || !activeThemeId) return;
     addMsg(messages, "user", escapeHtml(question));
     input.value = "";
-    const loading = addMsg(messages, "bot", "Mencari dokumen relevan & membaca PDF asli…");
+    const loading = addMsg(messages, "bot", "Membaca seluruh dokumen di tema ini…");
 
     try {
       const answer = await geminiAsk(themeName(activeThemeId), activeDocs, question);
@@ -334,7 +353,7 @@ function setupTab3() {
     if (!question || !activeThemeId) return;
 
     const resultEl = document.getElementById("infografisResult");
-    resultEl.innerHTML = `<div class="empty-hint">Mencari dokumen relevan & membaca PDF asli…</div>`;
+    resultEl.innerHTML = `<div class="empty-hint">Membaca seluruh dokumen & menganalisis…</div>`;
 
     try {
       const result = await geminiInfografis(themeName(activeThemeId), activeDocs, activeTps, question);
@@ -354,7 +373,6 @@ function renderInfografis(result) {
     <div id="chartContainer"><canvas id="infografisChart" height="90"></canvas></div>
   `;
 
-  // --- metrik ---
   const metricRow = document.getElementById("metricRow");
   (result.metrics || []).forEach((m) => {
     const card = document.createElement("div");
@@ -366,7 +384,6 @@ function renderInfografis(result) {
     metricRow.appendChild(card);
   });
 
-  // --- chart ---
   const chartData = result.chart;
   if (chartData && chartData.labels && chartData.labels.length) {
     const ctx = document.getElementById("infografisChart");
@@ -393,7 +410,6 @@ function renderInfografis(result) {
     document.getElementById("chartContainer").style.display = "none";
   }
 
-  // --- peta choropleth kelurahan ---
   renderMap(result.map_points || []);
 }
 
@@ -403,14 +419,13 @@ async function renderMap(points) {
   container.style.display = "block";
 
   if (!leafletMap) {
-    leafletMap = L.map("mapContainer").setView([-2.5, 118], 5); // pusat Indonesia
+    leafletMap = L.map("mapContainer").setView([-2.5, 118], 5);
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
       attribution: "© OpenStreetMap",
     }).addTo(leafletMap);
   }
   if (leafletLayer) { leafletMap.removeLayer(leafletLayer); }
 
-  // Ambil boundary per pasangan kabupaten+kecamatan unik yang muncul di hasil analisis.
   const pairs = [...new Map(points.map((p) => [`${p.kabupaten}|${p.kecamatan}`, p])).values()];
   const allFeatures = [];
 
@@ -425,7 +440,6 @@ async function renderMap(points) {
   }
 
   function scoreFor(feature) {
-    // [VERIFIKASI] nama field kelurahan pada data BIG -- lihat catatan di src/routes/geo.js
     const nameFromBig = (feature.properties?.WADMKD || feature.properties?.NAMOBJ || "").toLowerCase().trim();
     const match = points.find((p) => (p.kelurahan || "").toLowerCase().trim() === nameFromBig);
     return match || null;
