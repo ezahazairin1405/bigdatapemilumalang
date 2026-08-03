@@ -23,13 +23,19 @@ dan analisis peta/grafik (Infografis) per tema — cakupan pemilu se-Indonesia.
   penghapusan otomatis (baik karena gagal maupun nama file sama).
 - Gemini API key tetap diisi sendiri per-browser oleh masing-masing orang
   (disimpan di localStorage), bukan disimpan di server.
-- **Bisa pasang key dari 3 provider AI sekaligus**: Gemini, Claude, dan Groq
-  (menu "Kelola AI Key"). Dicoba berurutan Gemini → Claude → Groq, otomatis
-  pindah kalau satu key/provider kena limit -- ini menyelesaikan masalah kalau
-  semua key Gemini Anda ternyata 1 akun (jadi berbagi 1 kuota, bukan benar-benar
-  bertambah kapasitasnya).
+- **Bisa pasang key dari 4 provider AI sekaligus**: Gemini, Claude, Groq, dan
+  Grok/xAI (menu "Kelola AI Key"). **Alurnya 2 langkah**: (1) pilih 1 "Provider
+  AI aktif" di sidebar -- tanya-jawab/infografis selalu lewat provider itu,
+  tidak otomatis lompat ke provider lain; (2) di provider aktif itu, tiap key
+  punya kuota pemakaian sendiri (default 20x, bisa diubah di modal) -- begitu
+  satu key mencapai kuota atau kena limit sungguhan dari API, otomatis pindah
+  ke key berikutnya DI PROVIDER YANG SAMA. Kalau semua key di provider aktif
+  sudah penuh, muncul pesan error yang jelas -- tinggal reset pemakaian
+  key-nya (tombol "Reset" di modal) atau ganti provider aktif di sidebar.
+  Pengecualian: transkrip PDF hasil scan tetap otomatis mencoba Gemini &
+  Claude (satu-satunya yang mendukung baca PDF), apa pun provider aktifnya.
 
-## Catatan penting soal 3 provider AI
+## Catatan penting soal 4 provider AI
 
 - **Gemini** -- tetap yang utama, dukung baca PDF hasil scan (fallback transkrip).
 - **Claude** -- dipanggil langsung dari browser pakai header khusus
@@ -40,11 +46,26 @@ dan analisis peta/grafik (Infografis) per tema — cakupan pemilu se-Indonesia.
   sangat cepat. **Catatan jujur**: kuota gratis Groq per menit (TPM) untuk
   model yang cukup besar untuk tugas ini relatif kecil dibanding Gemini/Claude
   -- jadi untuk tema dengan BANYAK dokumen (semua dikirim utuh, ingat), Groq
-  mungkin tetap kena limit duluan. Tetap berguna sebagai lapisan cadangan
-  ketiga, terutama untuk tema yang belum terlalu banyak dokumennya.
+  mungkin tetap kena limit duluan. Tetap berguna sebagai lapisan cadangan,
+  terutama untuk tema yang belum terlalu banyak dokumennya.
+- **Grok (xAI)** -- juga teks saja (bukan bagian fallback transkrip PDF scan).
+  Model andalannya (`grok-4.3`) punya jendela konteks besar (1 juta token),
+  jadi cocok untuk tema dengan banyak dokumen sekaligus -- tapi belum sempat
+  diverifikasi seberapa besar jatah gratisnya di 2026, jadi anggap ini
+  cadangan yang perlu dicoba sendiri dulu.
 - Kalau mau kapasitas yang benar-benar bertambah (bukan cuma "kelihatan" ada
-  banyak key), pastikan key Gemini/Claude/Groq Anda masing-masing dari **akun
-  yang benar-benar berbeda** -- kuota dihitung per akun/project, bukan per key.
+  banyak key), pastikan key Gemini/Claude/Groq/Grok Anda masing-masing dari
+  **akun yang benar-benar berbeda** -- kuota dihitung per akun/project, bukan
+  per key.
+
+## Jangan bingung Groq dengan Grok
+
+Dua nama mirip tapi perusahaan berbeda sama sekali: **Groq** = penyedia
+inferensi cepat untuk model open-source (bukan bikin model sendiri). **Grok**
+= chatbot buatan xAI (Elon Musk), model sendiri. Keduanya sudah ada di
+aplikasi ini sebagai 2 provider terpisah.
+
+
 
 ## 1. Install & login
 
