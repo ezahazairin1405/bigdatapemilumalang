@@ -3,7 +3,7 @@ import { json } from "../utils.js";
 export async function listThemes(env) {
   const { results } = await env.DB.prepare(
     `SELECT t.id, t.name, t.created_at,
-            COUNT(d.id) AS document_count
+            SUM(CASE WHEN d.status != 'gagal' THEN 1 ELSE 0 END) AS document_count
      FROM themes t
      LEFT JOIN documents d ON d.theme_id = t.id
      GROUP BY t.id
