@@ -53,3 +53,11 @@ export async function updateDocument(request, env, id) {
 
   return json({ success: true });
 }
+
+// Dipakai saat klasifikasi PDF gagal -- file gagal tidak perlu tersimpan
+// permanen, cukup hilang begitu saja supaya tidak menumpuk di daftar.
+export async function deleteDocument(env, id) {
+  await env.DB.prepare("DELETE FROM tps_votes WHERE document_id = ?").bind(id).run();
+  await env.DB.prepare("DELETE FROM documents WHERE id = ?").bind(id).run();
+  return json({ success: true });
+}
