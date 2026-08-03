@@ -181,6 +181,9 @@ function setupTab1() {
       if (Array.isArray(result.tps_votes) && result.tps_votes.length) {
         await api.saveTpsVotes(themeId, docId, "pdf", result.tps_votes);
       }
+      // Simpan file PDF aslinya juga (bukan cuma ringkasannya), supaya nanti
+      // di Tab 2/3 bisa dibaca ulang utuh untuk pertanyaan yang butuh angka rinci.
+      await api.uploadDocumentFile(docId, file);
       setStatus(row, "selesai");
     } catch (err) {
       // File gagal tidak perlu direkam -- hapus dari database, tampilkan
@@ -275,7 +278,7 @@ function setupTab2() {
     if (!question || !activeThemeId) return;
     addMsg(messages, "user", escapeHtml(question));
     input.value = "";
-    const loading = addMsg(messages, "bot", "Menganalisis dokumen…");
+    const loading = addMsg(messages, "bot", "Mencari dokumen relevan & membaca PDF asli…");
 
     try {
       const answer = await geminiAsk(themeName(activeThemeId), activeDocs, question);
@@ -328,7 +331,7 @@ function setupTab3() {
     if (!question || !activeThemeId) return;
 
     const resultEl = document.getElementById("infografisResult");
-    resultEl.innerHTML = `<div class="empty-hint">Menganalisis…</div>`;
+    resultEl.innerHTML = `<div class="empty-hint">Mencari dokumen relevan & membaca PDF asli…</div>`;
 
     try {
       const result = await geminiInfografis(themeName(activeThemeId), activeDocs, activeTps, question);

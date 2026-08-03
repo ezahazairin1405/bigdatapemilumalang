@@ -120,6 +120,49 @@ async function fileToBase64(file) {
   return btoa(binary);
 }
 
+// --- Pilih dokumen paling relevan dari daftar ringkasan, lalu lampirkan
+// file PDF ASLINYA (bukan cuma ringkasan) supaya Gemini bisa baca angka
+// rinci -- dipakai bareng oleh Tab 2 (Elaborasi) dan Tab 3 (Infografis).
+async function pickAndAttachRelevantDocs(documentSummaries, question, maxDocs = 4) {
+  if (!documentSummaries.length) return { fileParts: [], relevantIds: [] };
+
+  const list = documentSummaries
+    .map((d) => `ID ${d.id}: ${d.original_name} — ${d.summary || "(belum diringkas)"}`)
+    .join("\n");
+
+  const pickPrompt = `Daftar dokumen yang tersedia di tema ini:
+${list}
+
+Pertanyaan: ${question}
+
+Dari daftar ID di atas, pilih maksimal ${maxDocs} ID dokumen yang PALING relevan untuk menjawab
+pertanyaan ini secara rinci (misal kalau pertanyaan menyebut wilayah/dapil/partai/jenis pemilihan
+tertentu, pilih dokumen yang paling cocok dengan itu). Balas HANYA JSON: {"ids": [1,2,3]}`;
+
+  let relevantIds;
+  try {
+    const picked = await callGemini([{ text: pickPrompt }], { json: true });
+    relevantIds = (picked.ids || []).map(String);
+  } catch {
+    relevantIds = documentSummaries.slice(0, maxDocs).map((d) => String(d.id));
+  }
+  if (!relevantIds.length) relevantIds = documentSummaries.slice(0, maxDocs).map((d) => String(d.id));
+
+  const fileParts = [];
+  for (const id of relevantIds) {
+    try {
+      const base64 = await api.getDocumentFileBase64(id);
+      const doc = documentSummaries.find((d) => String(d.id) === String(id));
+      fileParts.push({ text: `--- Dokumen asli: ${doc?.original_name || id} ---` });
+      fileParts.push({ inline_data: { mime_type: "application/pdf", data: base64 } });
+    } catch {
+      // File belum ada di R2 (misal diunggah sebelum fitur ini aktif) -- lewati saja,
+      // nanti tetap ada ringkasannya di konteks teks.
+    }
+  }
+  return { fileParts, relevantIds };
+}
+
 // --- Tab 1: klasifikasi & ringkasan 1 file PDF, dalam lingkup 1 tema ---
 async function geminiClassifyPdf(file, themeName) {
   const base64 = await fileToBase64(file);
@@ -146,36 +189,48 @@ Balas HANYA JSON, tanpa markdown.`;
   );
 }
 
-// --- Tab 2: tanya-jawab dalam lingkup ringkasan dokumen 1 tema ---
+// --- Tab 2: tanya-jawab, dengan PDF asli dokumen relevan dilampirkan utuh ---
 async function geminiAsk(themeName, documentSummaries, question) {
-  const context = documentSummaries
-    .map((d, i) => `Dokumen ${i + 1} (${d.original_name}): ${d.summary || "(belum diringkas)"}`)
-    .join("\n\n");
+  const { fileParts, relevantIds } = await pickAndAttachRelevantDocs(documentSummaries, question);
+
+  const otherContext = documentSummaries
+    .filter((d) => !relevantIds.includes(String(d.id)))
+    .map((d) => `- ${d.original_name}: ${d.summary || "(belum diringkas)"}`)
+    .join("\n");
 
   const prompt = `Tema: ${themeName}
 
-Konteks dari dokumen-dokumen yang sudah diunggah di tema ini:
-${context || "(belum ada dokumen dengan ringkasan)"}
+${fileParts.length ? "Dokumen paling relevan sudah dilampirkan LENGKAP di atas -- baca isinya rinci, termasuk angka di tabel." : "Tidak ada dokumen yang bisa dilampirkan utuh untuk pertanyaan ini."}
+
+Dokumen lain di tema ini (belum dilampirkan, cuma ringkasan singkat):
+${otherContext || "(tidak ada dokumen lain)"}
 
 Pertanyaan: ${question}
 
-Jawab berdasarkan konteks di atas dalam bahasa Indonesia. Kalau konteks tidak cukup untuk menjawab, katakan itu terus terang.`;
+Jawab dalam bahasa Indonesia berdasarkan dokumen yang dilampirkan (utamakan ini untuk angka rinci)
+dan ringkasan di atas. Kalau informasi tetap tidak cukup meski sudah membaca dokumen lengkap,
+katakan terus terang bagian mana yang kurang.`;
 
-  return callGemini([{ text: prompt }], { json: false });
+  return callGemini([...fileParts, { text: prompt }], { json: false });
 }
 
 // --- Tab 3: analisis infografis (data aktual + estimasi AI, untuk chart & peta) ---
 async function geminiInfografis(themeName, documentSummaries, tpsRows, question) {
-  const context = documentSummaries
-    .map((d, i) => `Dokumen ${i + 1} (${d.original_name}): ${d.summary || "(belum diringkas)"}`)
-    .join("\n\n");
+  const { fileParts, relevantIds } = await pickAndAttachRelevantDocs(documentSummaries, question);
+
+  const otherContext = documentSummaries
+    .filter((d) => !relevantIds.includes(String(d.id)))
+    .map((d) => `- ${d.original_name}: ${d.summary || "(belum diringkas)"}`)
+    .join("\n");
 
   const tpsSample = JSON.stringify(tpsRows.slice(0, 200)); // batasi ukuran prompt
 
   const prompt = `Tema: ${themeName}
 
-Ringkasan dokumen di tema ini:
-${context || "(tidak ada)"}
+${fileParts.length ? "Dokumen paling relevan sudah dilampirkan LENGKAP di atas -- baca angka rinci di tabelnya." : "Tidak ada dokumen yang bisa dilampirkan utuh untuk pertanyaan ini."}
+
+Dokumen lain di tema ini (belum dilampirkan, cuma ringkasan):
+${otherContext || "(tidak ada)"}
 
 Data suara per TPS yang tersedia (JSON, sebagian bisa terpotong kalau banyak):
 ${tpsSample || "[]"}
@@ -201,5 +256,5 @@ ATURAN PENTING:
 - Kalau tidak relevan menampilkan peta untuk pertanyaan ini, kembalikan "map_points": [].
 - Balas HANYA JSON, tanpa markdown.`;
 
-  return callGemini([{ text: prompt }], { json: true });
+  return callGemini([...fileParts, { text: prompt }], { json: true });
 }

@@ -46,6 +46,26 @@ const api = {
     const res = await fetch(`/api/documents/${id}`, { method: 'DELETE' });
     return res.json();
   },
+  async uploadDocumentFile(id, file) {
+    const res = await fetch(`/api/documents/${id}/file`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/pdf' },
+      body: file,
+    });
+    return res.json();
+  },
+  async getDocumentFileBase64(id) {
+    const res = await fetch(`/api/documents/${id}/file`);
+    if (!res.ok) throw new Error(`Gagal mengambil file dokumen #${id} (status ${res.status}).`);
+    const buf = await res.arrayBuffer();
+    let binary = '';
+    const bytes = new Uint8Array(buf);
+    const chunk = 0x8000;
+    for (let i = 0; i < bytes.length; i += chunk) {
+      binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+    }
+    return btoa(binary);
+  },
 
   async listTpsVotes(themeId) {
     const res = await fetch(`/api/tps-votes?theme_id=${encodeURIComponent(themeId)}`);
