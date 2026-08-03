@@ -11,6 +11,7 @@ import { listThemes, createTheme } from "./routes/themes.js";
 import { listDocuments, createDocument, updateDocument, deleteDocument } from "./routes/documents.js";
 import { saveTpsVotes, listTpsVotes } from "./routes/tps.js";
 import { getKelurahanBoundaries } from "./routes/geo.js";
+import { putDocumentFile, getDocumentFile } from "./routes/files.js";
 
 export default {
   async fetch(request, env) {
@@ -60,6 +61,14 @@ export default {
         }
         if (docMatch && request.method === "DELETE") {
           return await deleteDocument(env, docMatch[1]);
+        }
+
+        const fileMatch = pathname.match(/^\/api\/documents\/(\d+)\/file$/);
+        if (fileMatch && request.method === "PUT") {
+          return await putDocumentFile(request, env, fileMatch[1]);
+        }
+        if (fileMatch && request.method === "GET") {
+          return await getDocumentFile(env, fileMatch[1]);
         }
 
         if (pathname === "/api/tps-votes" && request.method === "GET") {
