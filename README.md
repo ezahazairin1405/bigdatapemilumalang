@@ -9,6 +9,10 @@ dan analisis peta/grafik (Infografis) per tema — cakupan pemilu se-Indonesia.
   browser (akurat 100% untuk PDF berbasis teks, karena diambil langsung dari
   lapisan teksnya, bukan "dibaca ulang" oleh AI). Gemini cuma dipakai sebagai
   cadangan kalau PDF-nya hasil scan/gambar (tidak ada lapisan teks).
+- **Excel (.xlsx/.xls) dan Word (.docx) juga didukung** -- Excel diekstrak
+  pakai SheetJS (malah lebih andal dari PDF untuk tabel, karena datanya sudah
+  rapi per sel), Word diekstrak pakai Mammoth.js. Format `.doc` lama (Word
+  97-2003) tidak didukung, perlu disimpan ulang sebagai `.docx` dulu.
 - Teks lengkap disimpan di **Cloudflare D1 saja** (tidak perlu R2 lagi).
 - Saat tanya-jawab/infografis, **semua dokumen di tema itu dikirim utuh**
   langsung dari database ke Gemini — tidak ada langkah "pilih dokumen
@@ -19,6 +23,28 @@ dan analisis peta/grafik (Infografis) per tema — cakupan pemilu se-Indonesia.
   penghapusan otomatis (baik karena gagal maupun nama file sama).
 - Gemini API key tetap diisi sendiri per-browser oleh masing-masing orang
   (disimpan di localStorage), bukan disimpan di server.
+- **Bisa pasang key dari 3 provider AI sekaligus**: Gemini, Claude, dan Groq
+  (menu "Kelola AI Key"). Dicoba berurutan Gemini → Claude → Groq, otomatis
+  pindah kalau satu key/provider kena limit -- ini menyelesaikan masalah kalau
+  semua key Gemini Anda ternyata 1 akun (jadi berbagi 1 kuota, bukan benar-benar
+  bertambah kapasitasnya).
+
+## Catatan penting soal 3 provider AI
+
+- **Gemini** -- tetap yang utama, dukung baca PDF hasil scan (fallback transkrip).
+- **Claude** -- dipanggil langsung dari browser pakai header khusus
+  (`anthropic-dangerous-direct-browser-access`) yang memang disediakan Anthropic
+  untuk kebutuhan seperti ini. Sama seperti Gemini, key-nya ada di browser
+  Anda, bukan di server. Juga bisa baca PDF hasil scan.
+- **Groq** -- teks saja (tidak dipakai untuk transkrip PDF hasil scan), tapi
+  sangat cepat. **Catatan jujur**: kuota gratis Groq per menit (TPM) untuk
+  model yang cukup besar untuk tugas ini relatif kecil dibanding Gemini/Claude
+  -- jadi untuk tema dengan BANYAK dokumen (semua dikirim utuh, ingat), Groq
+  mungkin tetap kena limit duluan. Tetap berguna sebagai lapisan cadangan
+  ketiga, terutama untuk tema yang belum terlalu banyak dokumennya.
+- Kalau mau kapasitas yang benar-benar bertambah (bukan cuma "kelihatan" ada
+  banyak key), pastikan key Gemini/Claude/Groq Anda masing-masing dari **akun
+  yang benar-benar berbeda** -- kuota dihitung per akun/project, bukan per key.
 
 ## 1. Install & login
 
