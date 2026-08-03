@@ -144,29 +144,14 @@ async function callGeminiRaw(key, model, textPrompt, base64Pdf, json) {
   return { ok: true, text };
 }
 
-// Claude API dipanggil langsung dari browser -- perlu header khusus yang
-// memang disediakan Anthropic untuk kebutuhan seperti ini (prototyping
-// client-side). Sama seperti Gemini, key-nya ada di browser, bukan server.
+// Claude, Groq, dan Grok tidak selalu mengizinkan dipanggil langsung dari
+// browser (CORS) -- diteruskan lewat proxy di Worker kita sendiri. Key API
+// tetap dikirim dari browser tiap request, TIDAK disimpan di server.
 async function callClaudeRaw(key, model, textPrompt, base64Pdf) {
-  const content = [];
-  if (base64Pdf) {
-    content.push({ type: "document", source: { type: "base64", media_type: "application/pdf", data: base64Pdf } });
-  }
-  content.push({ type: "text", text: textPrompt });
-
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
+  const res = await fetch("/api/proxy/claude", {
     method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "x-api-key": key,
-      "anthropic-version": "2023-06-01",
-      "anthropic-dangerous-direct-browser-access": "true",
-    },
-    body: JSON.stringify({
-      model,
-      max_tokens: 8192,
-      messages: [{ role: "user", content }],
-    }),
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ apiKey: key, model, prompt: textPrompt, base64Pdf }),
   });
   if (!res.ok) return { ok: false, status: res.status };
   const data = await res.json();
@@ -174,16 +159,13 @@ async function callClaudeRaw(key, model, textPrompt, base64Pdf) {
   return { ok: true, text };
 }
 
-// Format kompatibel OpenAI (Groq & Grok/xAI sama-sama pakai ini) -- teks saja,
-// tidak dipakai untuk fallback transkrip PDF hasil scan.
-async function callOpenAiCompatibleRaw(baseUrl, key, model, textPrompt, json) {
-  const body = { model, messages: [{ role: "user", content: textPrompt }] };
-  if (json) body.response_format = { type: "json_object" };
-
-  const res = await fetch(`${baseUrl}/chat/completions`, {
+// Format kompatibel OpenAI (Groq & Grok/xAI sama-sama pakai ini), diteruskan
+// lewat proxy Worker kita juga.
+async function callOpenAiCompatibleProxied(proxyPath, key, model, textPrompt, json) {
+  const res = await fetch(proxyPath, {
     method: "POST",
-    headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
-    body: JSON.stringify(body),
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ apiKey: key, model, prompt: textPrompt, json }),
   });
   if (!res.ok) return { ok: false, status: res.status };
   const data = await res.json();
@@ -192,11 +174,11 @@ async function callOpenAiCompatibleRaw(baseUrl, key, model, textPrompt, json) {
 }
 
 async function callGroqRaw(key, model, textPrompt, json) {
-  return callOpenAiCompatibleRaw("https://api.groq.com/openai/v1", key, model, textPrompt, json);
+  return callOpenAiCompatibleProxied("/api/proxy/groq", key, model, textPrompt, json);
 }
 
 async function callGrokRaw(key, model, textPrompt, json) {
-  return callOpenAiCompatibleRaw("https://api.x.ai/v1", key, model, textPrompt, json);
+  return callOpenAiCompatibleProxied("/api/proxy/grok", key, model, textPrompt, json);
 }
 
 // ---------- Pemanggil terpadu: coba semua key yang terpasang, lintas provider ----------
