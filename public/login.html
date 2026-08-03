@@ -28,6 +28,7 @@
   .brand{
     display:flex;
     align-items:baseline;
+    justify-content:center;
     gap:8px;
     margin-bottom:4px;
   }
@@ -42,7 +43,7 @@
     font-weight:700;
     font-size:1.6rem;
   }
-  .tagline{color:var(--text-muted);font-size:0.85rem;margin:0 0 28px;}
+  .tagline{color:var(--text-muted);font-size:0.85rem;margin:0 0 28px;text-align:center;}
   label{display:block;font-size:0.8rem;color:var(--text-muted);margin:16px 0 6px;}
   input{width:100%;}
   .submit{width:100%;margin-top:24px;}
@@ -62,7 +63,7 @@
 <body>
   <form class="card" id="loginForm">
     <div class="brand"><span class="ai">AI</span><span class="pemilu">PEMILU</span></div>
-    <p class="tagline">Arsip &amp; analisis dokumen pemilu berbasis Gemini.</p>
+    <p class="tagline">Selamat Datang di AI Pemilu - Rumah untuk analisis dan belajar kepemiluan.</p>
 
     <label for="username">Username</label>
     <input type="text" id="username" autocomplete="username" required />
