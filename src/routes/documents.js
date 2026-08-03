@@ -1,4 +1,5 @@
 import { json } from "../utils.js";
+import { deleteDocumentFile } from "./files.js";
 
 export async function listDocuments(request, env) {
   const url = new URL(request.url);
@@ -59,5 +60,6 @@ export async function updateDocument(request, env, id) {
 export async function deleteDocument(env, id) {
   await env.DB.prepare("DELETE FROM tps_votes WHERE document_id = ?").bind(id).run();
   await env.DB.prepare("DELETE FROM documents WHERE id = ?").bind(id).run();
+  await deleteDocumentFile(env, id);
   return json({ success: true });
 }
