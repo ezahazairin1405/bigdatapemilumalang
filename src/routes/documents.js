@@ -19,6 +19,9 @@ export async function listDocuments(request, env) {
   return json({ documents: results });
 }
 
+// Kalau ada file dengan nama sama di tema yang sama, dianggap "versi baru"
+// dari dokumen itu -- yang lama dihapus dulu (termasuk tps_votes & file R2-nya)
+// supaya tidak menumpuk jadi duplikat.
 export async function createDocument(request, env) {
   const body = await request.json().catch(() => ({}));
   const { theme_id, original_name } = body;
@@ -26,12 +29,22 @@ export async function createDocument(request, env) {
     return json({ error: "theme_id dan original_name wajib diisi." }, 400);
   }
 
+  const existing = await env.DB.prepare(
+    "SELECT id FROM documents WHERE theme_id = ? AND original_name = ?"
+  ).bind(theme_id, original_name).first();
+
+  if (existing) {
+    await env.DB.prepare("DELETE FROM tps_votes WHERE document_id = ?").bind(existing.id).run();
+    await env.DB.prepare("DELETE FROM documents WHERE id = ?").bind(existing.id).run();
+    await deleteDocumentFile(env, existing.id);
+  }
+
   const result = await env.DB.prepare(
     `INSERT INTO documents (theme_id, original_name, status)
      VALUES (?, ?, 'menunggu')`
   ).bind(theme_id, original_name).run();
 
-  return json({ id: result.meta.last_row_id }, 201);
+  return json({ id: result.meta.last_row_id, replaced: !!existing }, 201);
 }
 
 export async function updateDocument(request, env, id) {
