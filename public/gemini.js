@@ -138,8 +138,9 @@ async function callGeminiRaw(key, model, textPrompt, base64Pdf, json) {
     `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`,
     { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }
   );
-  if (!res.ok) return { ok: false, status: res.status };
-  const data = await res.json();
+  const bodyText = await res.text();
+  if (!res.ok) return { ok: false, status: res.status, detail: bodyText.slice(0, 400) };
+  const data = JSON.parse(bodyText);
   const text = data.candidates?.[0]?.content?.parts?.map((p) => p.text || "").join("") || "";
   return { ok: true, text };
 }
@@ -153,8 +154,9 @@ async function callClaudeRaw(key, model, textPrompt, base64Pdf) {
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ apiKey: key, model, prompt: textPrompt, base64Pdf }),
   });
-  if (!res.ok) return { ok: false, status: res.status };
-  const data = await res.json();
+  const bodyText = await res.text();
+  if (!res.ok) return { ok: false, status: res.status, detail: bodyText.slice(0, 400) };
+  const data = JSON.parse(bodyText);
   const text = (data.content || []).map((b) => b.text || "").join("");
   return { ok: true, text };
 }
@@ -167,8 +169,9 @@ async function callOpenAiCompatibleProxied(proxyPath, key, model, textPrompt, js
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ apiKey: key, model, prompt: textPrompt, json }),
   });
-  if (!res.ok) return { ok: false, status: res.status };
-  const data = await res.json();
+  const bodyText = await res.text();
+  if (!res.ok) return { ok: false, status: res.status, detail: bodyText.slice(0, 400) };
+  const data = JSON.parse(bodyText);
   const text = data.choices?.[0]?.message?.content || "";
   return { ok: true, text };
 }
@@ -233,7 +236,9 @@ async function callAI(textPrompt, { json = false, base64Pdf = null } = {}) {
             lastError = new Error(`${provider.label} (key #${i + 1}) gagal, status ${result.status}.`);
             continue;
           }
-          throw new Error(`${provider.label} error ${result.status}.`);
+          throw new Error(
+            `${provider.label} error ${result.status}${result.detail ? ": " + result.detail : ""}`
+          );
         }
 
         providerKeys.incrementUsage(provider.id, keyObj.key);
