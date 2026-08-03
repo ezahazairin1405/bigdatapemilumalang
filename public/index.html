@@ -1,0 +1,11 @@
+<!doctype html>
+<html lang="id">
+<head><meta charset="utf-8" /><title>AI PEMILU</title></head>
+<body>
+<script>
+  fetch('/api/session').then(r => r.json()).then(({ authenticated }) => {
+    window.location.replace(authenticated ? '/app.html' : '/login.html');
+  }).catch(() => window.location.replace('/login.html'));
+</script>
+</body>
+</html>

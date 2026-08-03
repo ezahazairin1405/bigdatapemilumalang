@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>AI PEMILU — Masuk</title>
+<link rel="stylesheet" href="/styles.css" />
+<style>
+  body{
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    min-height:100vh;
+    background:
+      radial-gradient(circle at 20% 15%, rgba(51,214,192,0.10), transparent 45%),
+      radial-gradient(circle at 85% 80%, rgba(232,162,61,0.08), transparent 45%),
+      var(--bg);
+    padding:20px;
+  }
+  .card{
+    width:100%;
+    max-width:380px;
+    background:var(--panel);
+    border:1px solid var(--border);
+    border-radius:14px;
+    padding:36px 32px;
+  }
+  .brand{
+    display:flex;
+    align-items:baseline;
+    gap:8px;
+    margin-bottom:4px;
+  }
+  .brand .ai{
+    font-family:'Space Grotesk',sans-serif;
+    font-weight:700;
+    font-size:1.6rem;
+    color:var(--accent);
+  }
+  .brand .pemilu{
+    font-family:'Space Grotesk',sans-serif;
+    font-weight:700;
+    font-size:1.6rem;
+  }
+  .tagline{color:var(--text-muted);font-size:0.85rem;margin:0 0 28px;}
+  label{display:block;font-size:0.8rem;color:var(--text-muted);margin:16px 0 6px;}
+  input{width:100%;}
+  .submit{width:100%;margin-top:24px;}
+  .error{
+    display:none;
+    margin-top:14px;
+    font-size:0.82rem;
+    color:var(--danger);
+    background:rgba(232,96,122,0.1);
+    border:1px solid rgba(232,96,122,0.35);
+    padding:8px 10px;
+    border-radius:8px;
+  }
+  .error.show{display:block;}
+</style>
+</head>
+<body>
+  <form class="card" id="loginForm">
+    <div class="brand"><span class="ai">AI</span><span class="pemilu">PEMILU</span></div>
+    <p class="tagline">Arsip &amp; analisis dokumen pemilu berbasis Gemini.</p>
+
+    <label for="username">Username</label>
+    <input type="text" id="username" autocomplete="username" required />
+
+    <label for="password">Password</label>
+    <input type="password" id="password" autocomplete="current-password" required />
+
+    <div class="error" id="loginError"></div>
+
+    <button type="submit" class="btn btn-primary submit" id="submitBtn">Masuk</button>
+  </form>
+
+  <script>
+    const form = document.getElementById('loginForm');
+    const errorBox = document.getElementById('loginError');
+    const submitBtn = document.getElementById('submitBtn');
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      errorBox.classList.remove('show');
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Memeriksa…';
+
+      try {
+        const res = await fetch('/api/login', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            username: document.getElementById('username').value.trim(),
+            password: document.getElementById('password').value,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok || data.error) {
+          errorBox.textContent = data.error || 'Gagal masuk.';
+          errorBox.classList.add('show');
+          submitBtn.disabled = false;
+          submitBtn.textContent = 'Masuk';
+          return;
+        }
+        window.location.href = '/app.html';
+      } catch (err) {
+        errorBox.textContent = 'Gagal menghubungi server: ' + err.message;
+        errorBox.classList.add('show');
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Masuk';
+      }
+    });
+  </script>
+</body>
+</html>

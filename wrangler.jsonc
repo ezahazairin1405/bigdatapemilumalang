@@ -1,0 +1,25 @@
+{
+	"$schema": "./node_modules/wrangler/config-schema.json",
+	"name": "ai-pemilu",
+	"main": "src/index.js",
+	"compatibility_date": "2026-03-27",
+	"compatibility_flags": [
+		"nodejs_compat"
+	],
+	// public/ disajikan sebagai static assets. Request yang tidak cocok
+	// dengan file statis (semua /api/*) otomatis diteruskan ke Worker.
+	"assets": {
+		"directory": "./public"
+	},
+	// Ganti "database_id" setelah membuat database dengan:
+	//   npx wrangler d1 create ai-pemilu-db
+	// lalu tempel id yang muncul di sini.
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "ai-pemilu-db",
+			"database_id": "d90d75f7-b81d-4634-888a-c23ef100802f",
+			"remote": true
+		}
+	]
+}
