@@ -156,6 +156,9 @@ function setupTab1() {
     while (queue.length) {
       const item = queue.shift();
       await processOne(item);
+      // Jeda antar file supaya tidak membombardir Gemini API (rawan kena rate limit
+      // kalau banyak PDF diunggah sekaligus).
+      if (queue.length) await new Promise((r) => setTimeout(r, 1500));
     }
     queueBusy = false;
     await renderThemeGroups();

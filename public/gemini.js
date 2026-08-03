@@ -2,10 +2,11 @@
 // memakai key yang diinput user sendiri, dengan rotasi otomatis kalau satu
 // key kena limit kuota -- pola yang sama seperti web pengolahan data.
 //
-// [VERIFIKASI] Nama model di bawah ini ("gemini-2.5-flash") sebaiknya dicek
-// ulang terhadap daftar model Gemini yang sedang aktif saat proyek ini
-// dibangun -- penamaan model Gemini berubah dari waktu ke waktu.
-const GEMINI_MODEL = "gemini-2.5-flash";
+// Pakai alias resmi Google yang selalu mengarah ke versi Flash stabil
+// terbaru (otomatis berpindah tiap Google merilis model baru, dengan
+// pemberitahuan 2 minggu sebelum perubahan besar) -- lebih tahan lama
+// dibanding menulis nama model versi tertentu yang bisa dipensiunkan.
+const GEMINI_MODEL = "gemini-flash-latest";
 const GEMINI_ENDPOINT = (model, key) =>
   `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
 
@@ -51,6 +52,11 @@ async function callGemini(parts, { json = false, systemInstruction } = {}) {
   let lastError;
   for (let i = 0; i < keys.length; i++) {
     const key = keys[i];
+
+    // Jeda kecil sebelum percobaan ke-2 dst, supaya tidak langsung membombardir
+    // API begitu satu key kena limit (mempercepat key lain ikut kena limit juga).
+    if (i > 0) await sleep(1200 * i);
+
     try {
       const res = await fetch(GEMINI_ENDPOINT(GEMINI_MODEL, key), {
         method: "POST",
@@ -58,10 +64,16 @@ async function callGemini(parts, { json = false, systemInstruction } = {}) {
         body: JSON.stringify(body),
       });
 
-      if (res.status === 429 || res.status === 403) {
-        // Kena limit/kuota key ini -- coba key berikutnya.
-        lastError = new Error(`Key #${i + 1} kena limit (status ${res.status}).`);
+      if (res.status === 429 || res.status === 403 || res.status === 500 || res.status === 503) {
+        // Kena limit/kuota/overload sementara -- coba key berikutnya.
+        lastError = new Error(`Key #${i + 1} gagal (status ${res.status}).`);
         continue;
+      }
+      if (res.status === 404) {
+        throw new Error(
+          `Model "${GEMINI_MODEL}" tidak ditemukan (404). Cek daftar model yang tersedia untuk key ini di ` +
+          `https://generativelanguage.googleapis.com/v1beta/models?key=YOUR_KEY, lalu sesuaikan GEMINI_MODEL di gemini.js.`
+        );
       }
       if (!res.ok) {
         const text = await res.text().catch(() => "");
@@ -73,9 +85,15 @@ async function callGemini(parts, { json = false, systemInstruction } = {}) {
       return json ? safeParseJson(text) : text;
     } catch (err) {
       lastError = err;
+      // 404 (nama model salah) akan sama untuk semua key -- tidak perlu diulang.
+      if (err.message.includes("tidak ditemukan (404)")) throw err;
     }
   }
-  throw lastError || new Error("Semua Gemini API key gagal dipakai.");
+  throw lastError || new Error("Semua Gemini API key gagal dipakai (kemungkinan semua kena limit kuota).");
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function safeParseJson(text) {
