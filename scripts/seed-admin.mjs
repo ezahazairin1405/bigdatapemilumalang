@@ -1,5 +1,6 @@
-// Membuat akun admin pertama.
-// Pakai: node scripts/seed-admin.mjs <username> <password>
+// Membuat akun (admin atau user biasa).
+// Pakai: node scripts/seed-admin.mjs <username> <password> [role]
+//   role: "admin" (default) atau "user"
 // Lalu jalankan perintah wrangler yang dicetak di akhir (lokal & remote).
 
 const ITERATIONS = 100_000;
@@ -25,14 +26,16 @@ async function hashPassword(password) {
   return `${bufToHex(salt)}:${bufToHex(bits)}`;
 }
 
-const [, , username, password] = process.argv;
+const [, , username, password, roleArg] = process.argv;
+const role = roleArg === "user" ? "user" : "admin";
+
 if (!username || !password) {
-  console.error("Pakai: node scripts/seed-admin.mjs <username> <password>");
+  console.error("Pakai: node scripts/seed-admin.mjs <username> <password> [admin|user]");
   process.exit(1);
 }
 
 const hash = await hashPassword(password);
-const sql = `INSERT INTO users (username, password_hash) VALUES ('${username.replace(/'/g, "''")}', '${hash}');`;
+const sql = `INSERT INTO users (username, password_hash, role) VALUES ('${username.replace(/'/g, "''")}', '${hash}', '${role}');`;
 
 console.log("\nSQL berikut sudah otomatis ditulis ke scripts/seed-admin.sql:\n");
 console.log(sql);
