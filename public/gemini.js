@@ -16,6 +16,7 @@ const PROVIDERS = [
   { id: "gemini", label: "Gemini", model: "gemini-flash-latest", supportsPdf: true },
   { id: "claude", label: "Claude", model: "claude-sonnet-5", supportsPdf: true },
   { id: "groq", label: "Groq", model: "openai/gpt-oss-120b", supportsPdf: false },
+  { id: "grok", label: "Grok (xAI)", model: "grok-4.3", supportsPdf: false },
 ];
 
 const providerKeys = {
@@ -119,13 +120,13 @@ async function callClaudeRaw(key, model, textPrompt, base64Pdf) {
   return { ok: true, text };
 }
 
-// Groq -- format kompatibel OpenAI, teks saja (tidak dipakai untuk fallback
-// transkrip PDF hasil scan).
-async function callGroqRaw(key, model, textPrompt, json) {
+// Format kompatibel OpenAI (Groq & Grok/xAI sama-sama pakai ini) -- teks saja,
+// tidak dipakai untuk fallback transkrip PDF hasil scan.
+async function callOpenAiCompatibleRaw(baseUrl, key, model, textPrompt, json) {
   const body = { model, messages: [{ role: "user", content: textPrompt }] };
   if (json) body.response_format = { type: "json_object" };
 
-  const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+  const res = await fetch(`${baseUrl}/chat/completions`, {
     method: "POST",
     headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
     body: JSON.stringify(body),
@@ -134,6 +135,14 @@ async function callGroqRaw(key, model, textPrompt, json) {
   const data = await res.json();
   const text = data.choices?.[0]?.message?.content || "";
   return { ok: true, text };
+}
+
+async function callGroqRaw(key, model, textPrompt, json) {
+  return callOpenAiCompatibleRaw("https://api.groq.com/openai/v1", key, model, textPrompt, json);
+}
+
+async function callGrokRaw(key, model, textPrompt, json) {
+  return callOpenAiCompatibleRaw("https://api.x.ai/v1", key, model, textPrompt, json);
 }
 
 // ---------- Pemanggil terpadu: coba semua key yang terpasang, lintas provider ----------
@@ -160,8 +169,10 @@ async function callAI(textPrompt, { json = false, base64Pdf = null } = {}) {
         result = await callGeminiRaw(key, provider.model, textPrompt, base64Pdf, json);
       } else if (provider.id === "claude") {
         result = await callClaudeRaw(key, provider.model, textPrompt, base64Pdf);
-      } else {
+      } else if (provider.id === "groq") {
         result = await callGroqRaw(key, provider.model, textPrompt, json);
+      } else {
+        result = await callGrokRaw(key, provider.model, textPrompt, json);
       }
 
       if (!result.ok) {
