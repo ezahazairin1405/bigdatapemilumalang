@@ -42,6 +42,10 @@ const api = {
     });
     return res.json();
   },
+  async deleteDocument(id) {
+    const res = await fetch(`/api/documents/${id}`, { method: 'DELETE' });
+    return res.json();
+  },
 
   async listTpsVotes(themeId) {
     const res = await fetch(`/api/tps-votes?theme_id=${encodeURIComponent(themeId)}`);

@@ -161,6 +161,7 @@ function setupTab1() {
       if (queue.length) await new Promise((r) => setTimeout(r, 1500));
     }
     queueBusy = false;
+    await refreshThemes();
     await renderThemeGroups();
   }
 
@@ -182,8 +183,11 @@ function setupTab1() {
       }
       setStatus(row, "selesai");
     } catch (err) {
-      await api.updateDocument(docId, { status: "gagal", error_message: err.message });
-      setStatus(row, "gagal", "gagal");
+      // File gagal tidak perlu direkam -- hapus dari database, tampilkan
+      // sebentar di antrian sebagai penanda, lalu hilang otomatis.
+      await api.deleteDocument(docId);
+      setStatus(row, "gagal", "gagal — " + err.message.slice(0, 40));
+      setTimeout(() => row.remove(), 3000);
     }
   }
 
@@ -195,20 +199,52 @@ async function renderThemeGroups() {
   const container = document.getElementById("themeGroups");
   container.innerHTML = "";
   for (const theme of themesCache) {
-    const docs = await api.listDocuments(theme.id);
-    if (!docs.length) continue;
+    if (!theme.document_count) continue;
+
     const group = document.createElement("div");
     group.className = "theme-group";
-    group.innerHTML = `<h3>${escapeHtml(theme.name)} <span class="mono" style="color:var(--text-muted);font-size:0.75rem;">(${docs.length} dokumen)</span></h3>`;
-    docs.forEach((d) => {
-      const card = document.createElement("div");
-      card.className = "doc-card";
-      card.innerHTML = `
-        <div class="fname">${escapeHtml(d.original_name)} — <span class="status-pill status-${d.status}">${d.status}</span></div>
-        ${d.summary ? `<div class="summary">${escapeHtml(d.summary)}</div>` : ""}
-      `;
-      group.appendChild(card);
+
+    const header = document.createElement("button");
+    header.className = "theme-group-header";
+    header.innerHTML = `
+      <span class="chevron">▸</span>
+      <span class="tname">${escapeHtml(theme.name)}</span>
+      <span class="mono count">${theme.document_count} dokumen</span>
+    `;
+
+    const body = document.createElement("div");
+    body.className = "theme-group-body";
+    body.style.display = "none";
+
+    let loaded = false;
+    header.addEventListener("click", async () => {
+      const isOpen = body.style.display !== "none";
+      if (isOpen) {
+        body.style.display = "none";
+        header.querySelector(".chevron").textContent = "▸";
+        return;
+      }
+      header.querySelector(".chevron").textContent = "▾";
+      body.style.display = "block";
+      if (!loaded) {
+        body.innerHTML = `<div class="empty-hint">Memuat…</div>`;
+        const docs = (await api.listDocuments(theme.id)).filter((d) => d.status !== "gagal");
+        body.innerHTML = "";
+        docs.forEach((d) => {
+          const card = document.createElement("div");
+          card.className = "doc-card";
+          card.innerHTML = `
+            <div class="fname">${escapeHtml(d.original_name)} — <span class="status-pill status-${d.status}">${d.status}</span></div>
+            ${d.summary ? `<div class="summary">${escapeHtml(d.summary)}</div>` : ""}
+          `;
+          body.appendChild(card);
+        });
+        loaded = true;
+      }
     });
+
+    group.appendChild(header);
+    group.appendChild(body);
     container.appendChild(group);
   }
 }
