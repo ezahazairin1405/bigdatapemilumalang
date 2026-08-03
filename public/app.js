@@ -139,10 +139,14 @@ function setupTab1() {
 
   function handleFiles(files) {
     const themeId = themeSelect.value;
-    if (!themeId) { alert("Pilih atau buat tema dulu sebelum mengunggah PDF."); return; }
-    const pdfs = files.filter((f) => f.type === "application/pdf");
-    if (!pdfs.length) { alert("Hanya file PDF yang didukung."); return; }
-    pdfs.forEach((file) => enqueueFile(file, themeId));
+    if (!themeId) { alert("Pilih atau buat tema dulu sebelum mengunggah dokumen."); return; }
+    const allowed = /\.(pdf|xlsx|xls|docx)$/i;
+    const validFiles = files.filter((f) => allowed.test(f.name));
+    if (!validFiles.length) {
+      alert("Hanya file PDF, Excel (.xlsx/.xls), atau Word (.docx) yang didukung.");
+      return;
+    }
+    validFiles.forEach((file) => enqueueFile(file, themeId));
   }
 
   let queueBusy = false;

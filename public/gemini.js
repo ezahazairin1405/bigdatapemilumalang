@@ -169,8 +169,44 @@ mungkin dengan aslinya. Balas HANYA teks transkripnya saja, tanpa komentar tamba
   );
 }
 
-// Fungsi utama dipanggil dari Tab 1: ekstrak teks LENGKAP (bukan ringkasan).
+// --- Ekstraksi Excel (.xlsx/.xls) pakai SheetJS -- datanya sudah rapi per
+// sel/baris, jadi ini malah LEBIH andal daripada PDF untuk tabel suara TPS.
+async function extractExcelText(file) {
+  const buf = await file.arrayBuffer();
+  const workbook = XLSX.read(buf, { type: "array" });
+  let fullText = "";
+  workbook.SheetNames.forEach((sheetName) => {
+    const sheet = workbook.Sheets[sheetName];
+    const csv = XLSX.utils.sheet_to_csv(sheet, { blankrows: false });
+    fullText += `\n--- Sheet: ${sheetName} ---\n${csv}`;
+  });
+  return fullText.trim();
+}
+
+// --- Ekstraksi Word (.docx) pakai Mammoth.js -- HANYA format .docx modern,
+// file .doc lama (format Word 97-2003) tidak didukung.
+async function extractWordText(file) {
+  const buf = await file.arrayBuffer();
+  const result = await mammoth.extractRawText({ arrayBuffer: buf });
+  return (result.value || "").trim();
+}
+
+// Fungsi utama dipanggil dari Tab 1: ekstrak teks LENGKAP (bukan ringkasan),
+// bercabang sesuai jenis file.
 async function extractDocumentText(file) {
+  const name = file.name.toLowerCase();
+
+  if (name.endsWith(".xlsx") || name.endsWith(".xls")) {
+    return await extractExcelText(file);
+  }
+  if (name.endsWith(".docx")) {
+    return await extractWordText(file);
+  }
+  if (name.endsWith(".doc")) {
+    throw new Error('Format ".doc" (Word lama) tidak didukung -- simpan ulang sebagai ".docx" dulu.');
+  }
+
+  // Default: PDF.
   let fullText = "";
   try {
     fullText = await extractPdfTextViaPdfJs(file);
