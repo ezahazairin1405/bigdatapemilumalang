@@ -30,6 +30,7 @@ let themesCache = [];
 
   setupTabs();
   setupKeyModal();
+  setupProviderSelect();
   await refreshThemes();
   if (currentRole === "admin") setupTab1();
   setupTab2();
@@ -45,6 +46,16 @@ function setupTabs() {
       document.getElementById(`tab-${btn.dataset.tab}`).classList.add("active");
     });
   });
+}
+
+// ================= Provider AI aktif =================
+function setupProviderSelect() {
+  const select = document.getElementById("activeProviderSelect");
+  select.innerHTML = PROVIDERS.map(
+    (p) => `<option value="${p.id}">${p.label}</option>`
+  ).join("");
+  select.value = activeProvider.get();
+  select.addEventListener("change", () => activeProvider.set(select.value));
 }
 
 // ================= Modal Gemini API key =================
@@ -69,6 +80,11 @@ function setupKeyModal() {
       section.innerHTML = `
         <h3>${provider.label}</h3>
         <p class="phint">${providerHints[provider.id] || ""}</p>
+        <div class="quota-row">
+          Kuota per key:
+          <input type="number" class="pkey-quota" min="1" value="${providerKeys.getQuota(provider.id)}" />
+          kali pakai sebelum otomatis pindah ke key berikutnya
+        </div>
         <div style="display:flex;gap:8px;margin-bottom:8px;">
           <input type="text" class="pkey-input" placeholder="Tempel ${provider.label} API key…" style="flex:1;" />
           <button class="btn btn-primary pkey-add">Tambah</button>
@@ -79,8 +95,10 @@ function setupKeyModal() {
       const input = section.querySelector(".pkey-input");
       const addBtn = section.querySelector(".pkey-add");
       const list = section.querySelector(".pkey-list");
+      const quotaInput = section.querySelector(".pkey-quota");
 
       function renderKeys() {
+        const quota = providerKeys.getQuota(provider.id);
         const keys = providerKeys.list(provider.id);
         list.innerHTML = "";
         if (!keys.length) {
@@ -90,17 +108,32 @@ function setupKeyModal() {
         keys.forEach((k) => {
           const row = document.createElement("div");
           row.className = "provider-key-row";
-          const masked = k.length > 8 ? `${k.slice(0, 4)}••••${k.slice(-4)}` : "••••";
-          row.innerHTML = `<span>${masked}</span>`;
+          const masked = k.key.length > 8 ? `${k.key.slice(0, 4)}••••${k.key.slice(-4)}` : "••••";
+          const full = k.used >= quota;
+          row.innerHTML = `
+            <span>${masked}</span>
+            <span class="usage-badge ${full ? "usage-full" : "usage-ok"}">${k.used}/${quota}${full ? " · penuh" : ""}</span>
+          `;
+          const resetBtn = document.createElement("button");
+          resetBtn.textContent = "Reset";
+          resetBtn.className = "btn btn-ghost";
+          resetBtn.style.cssText = "padding:3px 8px;font-size:0.7rem;";
+          resetBtn.addEventListener("click", () => { providerKeys.resetUsage(provider.id, k.key); renderKeys(); });
           const del = document.createElement("button");
           del.textContent = "Hapus";
           del.className = "btn btn-danger";
           del.style.cssText = "padding:3px 8px;font-size:0.7rem;";
-          del.addEventListener("click", () => { providerKeys.remove(provider.id, k); renderKeys(); });
+          del.addEventListener("click", () => { providerKeys.remove(provider.id, k.key); renderKeys(); });
+          row.appendChild(resetBtn);
           row.appendChild(del);
           list.appendChild(row);
         });
       }
+
+      quotaInput.addEventListener("change", () => {
+        const val = parseInt(quotaInput.value, 10);
+        if (val > 0) { providerKeys.setQuota(provider.id, val); renderKeys(); }
+      });
 
       addBtn.addEventListener("click", () => {
         const val = input.value.trim();

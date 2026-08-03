@@ -3,15 +3,23 @@
 // supaya angka di tabel akurat, bukan hasil "baca lalu tulis ulang" yang
 // rawan salah ketik.
 //
-// AI (Gemini/Claude/Groq) dipakai untuk: (1) fallback transkrip kalau PDF
+// AI (Gemini/Claude/Groq/Grok) dipakai untuk: (1) fallback transkrip kalau PDF
 // hasil scan/gambar, (2) ekstrak tabel suara TPS dari teks, (3) menjawab
-// pertanyaan di Tab 2/3. Ketiga provider bisa dipasang key-nya sendiri-
-// sendiri (menu "Kelola AI Key") -- dicoba berurutan Gemini -> Claude -> Groq,
-// pindah ke key/provider berikutnya otomatis kalau satu kena limit.
+// pertanyaan di Tab 2/3.
+//
+// Cara pakainya: pilih 1 PROVIDER AKTIF (lewat sidebar), lalu di provider itu
+// bisa ada beberapa key -- tiap key dianggap "penuh" setelah dipakai sejumlah
+// KUOTA (default 20x, bisa diubah di menu "Kelola AI Key"), otomatis pindah
+// ke key berikutnya DI PROVIDER YANG SAMA kalau sudah penuh atau kena error
+// limit sungguhan dari API. Kalau semua key di provider aktif penuh, perlu
+// direset manual atau pindah provider aktif -- tidak otomatis lompat ke
+// provider lain (supaya pemakaian tetap sesuai provider yang Anda pilih).
+// Pengecualian: transkrip PDF hasil scan cuma didukung Gemini & Claude, jadi
+// untuk itu selalu dicoba keduanya apa pun provider aktifnya.
 //
 // [VERIFIKASI] Nama model tiap provider di bawah ini sebaiknya dicek ulang
 // terhadap model yang aktif saat ini (penamaan model berubah dari waktu ke
-// waktu untuk ketiga provider).
+// waktu untuk tiap provider).
 const PROVIDERS = [
   { id: "gemini", label: "Gemini", model: "gemini-flash-latest", supportsPdf: true },
   { id: "claude", label: "Claude", model: "claude-sonnet-5", supportsPdf: true },
@@ -19,13 +27,21 @@ const PROVIDERS = [
   { id: "grok", label: "Grok (xAI)", model: "grok-4.3", supportsPdf: false },
 ];
 
+const DEFAULT_QUOTA = 20;
+
 const providerKeys = {
   storageKey(providerId) {
     return `ai_pemilu_keys_${providerId}`;
   },
+  quotaStorageKey(providerId) {
+    return `ai_pemilu_quota_${providerId}`;
+  },
+  // Setiap entri: { key: "...", used: 0 }. Data lama (array of string) otomatis
+  // dimigrasikan ke bentuk ini saat dibaca.
   list(providerId) {
     try {
-      return JSON.parse(localStorage.getItem(providerKeys.storageKey(providerId)) || "[]");
+      const raw = JSON.parse(localStorage.getItem(providerKeys.storageKey(providerId)) || "[]");
+      return raw.map((item) => (typeof item === "string" ? { key: item, used: 0 } : item));
     } catch {
       return [];
     }
@@ -35,11 +51,49 @@ const providerKeys = {
   },
   add(providerId, key) {
     const keys = providerKeys.list(providerId);
-    if (!keys.includes(key)) keys.push(key);
+    if (!keys.some((k) => k.key === key)) keys.push({ key, used: 0 });
+    providerKeys.save(providerId, keys);
+  },
+  getQuota(providerId) {
+    const v = parseInt(localStorage.getItem(providerKeys.quotaStorageKey(providerId)), 10);
+    return Number.isFinite(v) && v > 0 ? v : DEFAULT_QUOTA;
+  },
+  setQuota(providerId, quota) {
+    localStorage.setItem(providerKeys.quotaStorageKey(providerId), String(quota));
+  },
+  incrementUsage(providerId, key) {
+    const keys = providerKeys.list(providerId);
+    const found = keys.find((k) => k.key === key);
+    if (found) found.used += 1;
+    providerKeys.save(providerId, keys);
+  },
+  markFull(providerId, key) {
+    const quota = providerKeys.getQuota(providerId);
+    const keys = providerKeys.list(providerId);
+    const found = keys.find((k) => k.key === key);
+    if (found) found.used = quota;
+    providerKeys.save(providerId, keys);
+  },
+  resetUsage(providerId, key) {
+    const keys = providerKeys.list(providerId);
+    const found = keys.find((k) => k.key === key);
+    if (found) found.used = 0;
     providerKeys.save(providerId, keys);
   },
   remove(providerId, key) {
-    providerKeys.save(providerId, providerKeys.list(providerId).filter((k) => k !== key));
+    providerKeys.save(providerId, providerKeys.list(providerId).filter((k) => k.key !== key));
+  },
+};
+
+// Provider yang sedang aktif dipakai (dipilih manual, bukan otomatis lintas provider).
+const activeProvider = {
+  storageKey: "ai_pemilu_active_provider",
+  get() {
+    const v = localStorage.getItem(activeProvider.storageKey);
+    return PROVIDERS.some((p) => p.id === v) ? v : PROVIDERS[0].id;
+  },
+  set(providerId) {
+    localStorage.setItem(activeProvider.storageKey, providerId);
   },
 };
 
@@ -149,46 +203,69 @@ async function callGrokRaw(key, model, textPrompt, json) {
 // Urutan: Gemini -> Claude -> Groq. Kalau ada PDF yang perlu dibaca (base64Pdf),
 // Groq dilewati (tidak mendukung pembacaan PDF di alur ini).
 async function callAI(textPrompt, { json = false, base64Pdf = null } = {}) {
-  const attempts = [];
-  for (const provider of PROVIDERS) {
-    if (base64Pdf && !provider.supportsPdf) continue;
-    providerKeys.list(provider.id).forEach((key) => attempts.push({ provider, key }));
-  }
-  if (!attempts.length) {
-    throw new Error("Belum ada AI key yang terpasang. Tambahkan lewat menu 'Kelola AI Key'.");
-  }
+  // Transkrip PDF hasil scan cuma didukung Gemini & Claude -- untuk kasus ini
+  // dicoba keduanya apa pun provider aktifnya. Selain itu, cuma provider aktif
+  // yang dicoba (tidak lompat ke provider lain secara otomatis).
+  const candidateProviders = base64Pdf
+    ? PROVIDERS.filter((p) => p.supportsPdf)
+    : [PROVIDERS.find((p) => p.id === activeProvider.get())];
 
   let lastError;
-  for (let i = 0; i < attempts.length; i++) {
-    const { provider, key } = attempts[i];
-    if (i > 0) await sleep(1000);
+  let triedAnyKey = false;
 
-    try {
-      let result;
-      if (provider.id === "gemini") {
-        result = await callGeminiRaw(key, provider.model, textPrompt, base64Pdf, json);
-      } else if (provider.id === "claude") {
-        result = await callClaudeRaw(key, provider.model, textPrompt, base64Pdf);
-      } else if (provider.id === "groq") {
-        result = await callGroqRaw(key, provider.model, textPrompt, json);
-      } else {
-        result = await callGrokRaw(key, provider.model, textPrompt, json);
-      }
+  for (const provider of candidateProviders) {
+    const quota = providerKeys.getQuota(provider.id);
+    const usableKeys = providerKeys.list(provider.id).filter((k) => k.used < quota);
 
-      if (!result.ok) {
-        if ([429, 403, 500, 503, 529].includes(result.status)) {
-          lastError = new Error(`${provider.label} (key #${i + 1}) gagal, status ${result.status}.`);
-          continue;
+    if (!usableKeys.length) {
+      lastError = new Error(
+        `Semua key ${provider.label} sudah mencapai kuota pemakaian (${quota}x). ` +
+        `Reset lewat menu "Kelola AI Key", atau ganti provider aktif.`
+      );
+      continue;
+    }
+
+    for (let i = 0; i < usableKeys.length; i++) {
+      const keyObj = usableKeys[i];
+      triedAnyKey = true;
+      if (i > 0) await sleep(1000);
+
+      try {
+        let result;
+        if (provider.id === "gemini") {
+          result = await callGeminiRaw(keyObj.key, provider.model, textPrompt, base64Pdf, json);
+        } else if (provider.id === "claude") {
+          result = await callClaudeRaw(keyObj.key, provider.model, textPrompt, base64Pdf);
+        } else if (provider.id === "groq") {
+          result = await callGroqRaw(keyObj.key, provider.model, textPrompt, json);
+        } else {
+          result = await callGrokRaw(keyObj.key, provider.model, textPrompt, json);
         }
-        throw new Error(`${provider.label} error ${result.status}.`);
-      }
 
-      return json ? safeParseJson(result.text) : result.text;
-    } catch (err) {
-      lastError = err;
+        if (!result.ok) {
+          if ([429, 403, 500, 503, 529].includes(result.status)) {
+            // Kena limit sungguhan dari API -- tandai key ini penuh (walau
+            // penghitung lokalnya belum sampai kuota) supaya lompat ke key
+            // berikutnya di provider yang sama.
+            providerKeys.markFull(provider.id, keyObj.key);
+            lastError = new Error(`${provider.label} (key #${i + 1}) gagal, status ${result.status}.`);
+            continue;
+          }
+          throw new Error(`${provider.label} error ${result.status}.`);
+        }
+
+        providerKeys.incrementUsage(provider.id, keyObj.key);
+        return json ? safeParseJson(result.text) : result.text;
+      } catch (err) {
+        lastError = err;
+      }
     }
   }
-  throw lastError || new Error("Semua AI key gagal dipakai (kemungkinan semua kena limit kuota).");
+
+  if (!triedAnyKey && !lastError) {
+    throw new Error("Belum ada AI key yang terpasang. Tambahkan lewat menu 'Kelola AI Key'.");
+  }
+  throw lastError || new Error("Semua key di provider aktif gagal dipakai.");
 }
 
 // ---------- Ekstraksi PDF via pdf.js ----------

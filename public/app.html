@@ -187,6 +187,11 @@
   .provider-section .phint{color:var(--text-muted);font-size:0.74rem;margin:0 0 8px;}
   .provider-key-row{display:flex;align-items:center;gap:8px;background:var(--panel-2);border:1px solid var(--border);border-radius:6px;padding:6px 10px;margin-bottom:6px;}
   .provider-key-row span{flex:1;font-size:0.78rem;}
+  .quota-row{display:flex;align-items:center;gap:8px;margin-bottom:10px;font-size:0.78rem;color:var(--text-muted);}
+  .quota-row input{width:64px;padding:5px 8px;font-size:0.8rem;}
+  .usage-badge{font-family:'IBM Plex Mono';font-size:0.68rem;padding:2px 7px;border-radius:999px;white-space:nowrap;}
+  .usage-ok{background:rgba(51,214,192,0.12);color:var(--accent);}
+  .usage-full{background:rgba(232,96,122,0.12);color:var(--danger);}
 </style>
 </head>
 <body>
@@ -199,6 +204,8 @@
   <button class="tab-btn" data-tab="infografis"><span class="n">03</span> Infografis</button>
 
   <div class="sidebar-footer">
+    <label style="font-size:0.72rem;color:var(--text-muted);padding:0 8px;">Provider AI aktif</label>
+    <select id="activeProviderSelect" style="width:100%;font-size:0.82rem;"></select>
     <button class="btn btn-ghost" id="geminiKeyBtn" style="font-size:0.78rem;">Kelola AI Key</button>
     <div class="user-chip mono" id="userChip"></div>
     <button class="btn btn-ghost" id="logoutBtn" style="font-size:0.78rem;">Keluar</button>
