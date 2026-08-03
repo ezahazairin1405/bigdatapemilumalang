@@ -1,12 +1,26 @@
 # AI PEMILU
 
-Web app berdiri sendiri: upload PDF terus-menerus (dikelompokkan per tema yang Anda
-tentukan sendiri), tanya-jawab per tema (Elaborasi Data), dan analisis peta/grafik
-per tema (Infografis) — cakupan pemilu se-Indonesia, bukan cuma Bawaslu Kabupaten Malang.
-Login 1 akun admin. Gemini API key diinput & dirotasi dari browser, semua panggilan
-Gemini terjadi client-side (sama seperti pola di web pengolahan data).
+Basis pengetahuan pemilu berdiri sendiri: upload PDF terus-menerus (dikelompokkan
+per tema yang ditentukan sendiri oleh admin), lalu tanya-jawab (Elaborasi Data)
+dan analisis peta/grafik (Infografis) per tema — cakupan pemilu se-Indonesia.
 
-## 1. Install dependency
+**Versi ini (v2)** — perubahan besar dari draf pertama:
+- Isi PDF diekstrak **teks lengkapnya** (bukan diringkas) pakai pdf.js di
+  browser (akurat 100% untuk PDF berbasis teks, karena diambil langsung dari
+  lapisan teksnya, bukan "dibaca ulang" oleh AI). Gemini cuma dipakai sebagai
+  cadangan kalau PDF-nya hasil scan/gambar (tidak ada lapisan teks).
+- Teks lengkap disimpan di **Cloudflare D1 saja** (tidak perlu R2 lagi).
+- Saat tanya-jawab/infografis, **semua dokumen di tema itu dikirim utuh**
+  langsung dari database ke Gemini — tidak ada langkah "pilih dokumen
+  relevan", tidak ada upload-ulang ke Gemini Files API.
+- **2 peran akun**: admin (upload & kelola tema) dan user biasa (cuma
+  tanya-jawab & infografis) — semua tetap wajib login.
+- **Hapus dokumen manual** lewat tombol ✕ di tiap baris — tidak ada lagi
+  penghapusan otomatis (baik karena gagal maupun nama file sama).
+- Gemini API key tetap diisi sendiri per-browser oleh masing-masing orang
+  (disimpan di localStorage), bukan disimpan di server.
+
+## 1. Install & login
 
 ```bash
 cd ai-pemilu
@@ -14,29 +28,39 @@ npm install
 npx wrangler login
 ```
 
-## 2. Buat database D1
+## 2. Database D1
 
 ```bash
 npx wrangler d1 create ai-pemilu-db
 ```
-
-Salin `database_id` yang muncul, tempel ke `wrangler.jsonc` (ganti
-`"GANTI_DENGAN_DATABASE_ID"`).
+Salin `database_id` yang muncul, tempel ke `wrangler.jsonc`.
 
 ## 3. Jalankan skema
 
+**Kalau baru mulai dari nol:**
 ```bash
 npx wrangler d1 execute ai-pemilu-db --file=./schema.sql --remote
-# untuk pengembangan lokal juga jalankan tanpa --remote:
-npx wrangler d1 execute ai-pemilu-db --file=./schema.sql
 ```
 
-## 4. Buat akun admin
+**Kalau melanjutkan dari database yang sudah ada isinya (versi sebelumnya):**
+```bash
+npx wrangler d1 execute ai-pemilu-db --file=./scripts/migrate-v2.sql --remote
+```
+Ini menambah kolom `role` (akun lama otomatis jadi admin) dan `full_text` tanpa
+menghapus data yang sudah ada. **Tidak perlu bikin R2 bucket lagi** — kalau
+sebelumnya sempat dibuat, boleh dibiarkan saja atau dihapus manual dari
+dashboard, tidak dipakai oleh kode versi ini.
+
+## 4. Buat akun
 
 ```bash
-node scripts/seed-admin.mjs admin "password_anda"
+# Admin (bisa upload & kelola tema)
+node scripts/seed-admin.mjs admin "password_admin" admin
 npx wrangler d1 execute ai-pemilu-db --file=./scripts/seed-admin.sql --remote
-npx wrangler d1 execute ai-pemilu-db --file=./scripts/seed-admin.sql   # lokal juga kalau perlu
+
+# Akun biasa (cuma tanya-jawab & infografis) -- ulangi untuk tiap orang
+node scripts/seed-admin.mjs budi "password_budi" user
+npx wrangler d1 execute ai-pemilu-db --file=./scripts/seed-admin.sql --remote
 ```
 
 ## 5. Deploy
@@ -45,54 +69,44 @@ npx wrangler d1 execute ai-pemilu-db --file=./scripts/seed-admin.sql   # lokal j
 npx wrangler deploy
 ```
 
-Buka URL yang diberikan Wrangler → login → mulai pakai. Klik **"Kelola Gemini API
-Key"** di sidebar untuk menempelkan satu atau beberapa Gemini API key (disimpan di
-browser, dirotasi otomatis kalau satu key kena limit).
+Buka URL-nya → login → klik **"Kelola Gemini API Key"** di sidebar (tiap orang
+isi key Gemini miliknya sendiri, disimpan di browser masing-masing).
 
 ## Struktur proyek
 
 ```
-wrangler.jsonc       konfigurasi Worker + binding D1
-schema.sql            skema database
-scripts/seed-admin.mjs  bikin akun admin pertama
-src/index.js           router utama + login/logout/sesi
-src/auth.js            hash password & sesi cookie
-src/routes/            handler API: themes, documents, tps, geo (proxy BIG)
-public/login.html       halaman login
-public/app.html         halaman utama (3 tab)
-public/api.js           panggilan ke backend Worker kita sendiri
-public/gemini.js        panggilan langsung ke Gemini API + rotasi key
-public/app.js           logika UI ketiga tab
+wrangler.jsonc          konfigurasi Worker + binding D1
+schema.sql               skema database (dari nol)
+scripts/migrate-v2.sql    migrasi untuk database yang sudah ada
+scripts/seed-admin.mjs    bikin akun (admin/user)
+src/index.js              router utama + login/logout/sesi + otorisasi peran
+src/auth.js               hash password, sesi cookie, cek peran
+src/routes/               handler API: themes, documents, tps, geo (proxy BIG)
+public/login.html          halaman login
+public/app.html             halaman utama (3 tab, Tab 1 disembunyikan untuk non-admin)
+public/api.js                panggilan ke backend Worker kita sendiri
+public/gemini.js             ekstraksi teks (pdf.js), tanya-jawab, infografis
+public/app.js                 logika UI ketiga tab + peran
 ```
 
-## Hal-hal yang perlu diverifikasi/disesuaikan sebelum dipakai serius
+## Konsekuensi yang perlu diketahui
 
-Beberapa bagian ditandai `[VERIFIKASI]` langsung di kodenya, ringkasannya:
+- **Waktu tunggu jawaban makin lama seiring tema makin banyak dokumennya** --
+  karena semua dokumen selalu dikirim utuh tiap kali bertanya (sengaja, sesuai
+  keputusan), bukan cuma yang relevan. Kalau nanti dirasa terlalu lambat untuk
+  tema tertentu, opsi menambah langkah "pilih dokumen relevan" bisa
+  dipertimbangkan lagi belakangan.
+- **Ekstraksi tabel lewat pdf.js** cukup baik untuk PDF berbasis teks biasa,
+  tapi tabel dengan tata letak sangat kompleks (banyak kolom bertumpuk) kadang
+  urutannya masih bisa sedikit meleset -- kalau nanti ditemukan kasus begitu,
+  ceritakan contohnya supaya logika rekonstruksi barisnya bisa disempurnakan.
+- **Ekstraksi data suara TPS** (untuk Tab Infografis) masih lewat 1 panggilan
+  Gemini per dokumen saat upload -- kalau dokumennya tidak berisi tabel suara,
+  otomatis dilewati (tidak menggagalkan upload).
 
-1. **Nama model Gemini** (`public/gemini.js`, `GEMINI_MODEL`) — dicek dulu apakah
-   `gemini-2.5-flash` masih model yang aktif/paling sesuai saat Anda membangun ini;
-   penamaan model Gemini berubah dari waktu ke waktu.
-2. **Field GeoJSON dari BIG** (`src/routes/geo.js`, `getKelurahanBoundaries`) — nama
-   field seperti `WADMKK`/`WADMKC`/`WADMKD` adalah konvensi umum data RBI BIG, tapi
-   sebaiknya dicek langsung ke endpoint layanannya sebelum dipakai produksi:
-   `https://geoservices.big.go.id/rbi/rest/services/BATASWILAYAH/Administrasi_AR_KelDesa_10K/MapServer/0?f=pjson`
-3. **Prompt Gemini** di `public/gemini.js` (klasifikasi, tanya-jawab, infografis)
-   adalah titik awal yang wajar tapi ada baiknya disesuaikan setelah dicoba dengan
-   PDF/contoh pertanyaan asli Anda — terutama bagian ekstraksi tabel suara TPS,
-   karena format formulir C1 bisa bervariasi.
-4. **Label "Data dokumen" vs "Estimasi AI"** sudah diterapkan konsisten di Tab
-   Elaborasi Data (badge di jawaban) dan Tab Infografis (metrik, chart, peta) —
-   tapi keakuratan pelabelan itu sepenuhnya bergantung pada Gemini mengikuti aturan
-   di prompt, jadi ada baiknya sesekali diperiksa manual.
+## Hal yang perlu diverifikasi
 
-## Batasan yang disengaja untuk versi pertama ini
-
-- Tab Elaborasi Data mengirim *seluruh* ringkasan dokumen di tema itu sebagai
-  konteks ke Gemini setiap kali bertanya — cukup baik untuk tema dengan puluhan
-  dokumen, tapi kalau satu tema nanti berisi ratusan dokumen, ringkasannya bisa
-  kepanjangan untuk satu prompt dan perlu strategi ringkas tambahan (misal
-  ringkasan-dari-ringkasan per tema).
-- Peta di Tab Infografis mencocokkan nama kelurahan dari hasil Gemini dengan nama
-  kelurahan dari data BIG secara harfiah (huruf besar/kecil diabaikan, tapi typo/
-  beda ejaan tidak). Kalau nanti sering meleset, perlu langkah pencocokan yang lebih
-  toleran (fuzzy matching).
+- **Nama model Gemini** (`public/gemini.js`, `GEMINI_MODEL`) -- cek masih
+  berlaku terhadap model yang aktif saat ini.
+- **Field GeoJSON dari BIG** (`src/routes/geo.js`) -- nama field seperti
+  `WADMKK`/`WADMKC`/`WADMKD` sebaiknya dicek ulang ke endpoint resminya.

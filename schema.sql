@@ -1,11 +1,14 @@
--- Skema database AI PEMILU
+-- Skema database AI PEMILU (v2 -- teks lengkap disimpan di D1, tanpa R2,
+-- ada peran akun admin/user).
 -- Jalankan: npx wrangler d1 execute ai-pemilu-db --file=./schema.sql --remote
 
 CREATE TABLE IF NOT EXISTS users (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   username TEXT UNIQUE NOT NULL,
-  -- format "saltHex:hashHex", PBKDF2-SHA256 -- sama seperti pola di proyek lain
+  -- format "saltHex:hashHex", PBKDF2-SHA256
   password_hash TEXT NOT NULL,
+  -- 'admin' bisa upload & kelola tema; 'user' cuma tanya-jawab & infografis
+  role TEXT NOT NULL DEFAULT 'user',
   created_at TEXT DEFAULT (datetime('now'))
 );
 
@@ -22,19 +25,22 @@ CREATE TABLE IF NOT EXISTS themes (
   created_at TEXT DEFAULT (datetime('now'))
 );
 
+-- full_text: teks lengkap hasil ekstraksi PDF (pdf.js di browser, atau
+-- transkrip Gemini kalau PDF hasil scan tanpa lapisan teks) -- TIDAK
+-- diringkas/dipotong, dipakai utuh saat tanya-jawab/infografis.
 CREATE TABLE IF NOT EXISTS documents (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   theme_id INTEGER NOT NULL REFERENCES themes(id),
   original_name TEXT NOT NULL,
   -- menunggu | diproses | selesai | gagal
   status TEXT NOT NULL DEFAULT 'menunggu',
-  summary TEXT,          -- ringkasan isi PDF hasil Gemini
-  extracted_data TEXT,   -- JSON bebas: angka/tabel penting yang diekstrak
+  full_text TEXT,
   error_message TEXT,
   uploaded_at TEXT DEFAULT (datetime('now'))
 );
 
--- Data suara per TPS (dari PDF C1 atau tempel Excel), dipakai Tab Infografis
+-- Data suara per TPS (diekstrak dari full_text oleh Gemini, atau tempel Excel),
+-- dipakai Tab Infografis.
 CREATE TABLE IF NOT EXISTS tps_votes (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   document_id INTEGER REFERENCES documents(id),
