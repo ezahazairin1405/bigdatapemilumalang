@@ -1,91 +1,46 @@
-// Ekstraksi teks PDF dilakukan di browser pakai pdf.js (library resmi Mozilla),
-// BUKAN diketik ulang oleh Gemini -- supaya angka di tabel akurat 100% (persis
-// dari lapisan teks PDF-nya), bukan hasil "baca lalu tulis ulang" AI yang rawan
-// salah ketik untuk dokumen berisi banyak angka.
-// Gemini cuma dipakai untuk: (1) fallback transkrip kalau PDF ternyata hasil
-// scan/gambar (tidak ada lapisan teks), (2) ekstrak tabel suara TPS dari teks
-// yang sudah didapat, (3) menjawab pertanyaan di Tab 2/3.
+// Ekstraksi teks dokumen (PDF/Excel/Word) dilakukan di browser lewat library
+// masing-masing (pdf.js/SheetJS/Mammoth), BUKAN diketik ulang oleh AI --
+// supaya angka di tabel akurat, bukan hasil "baca lalu tulis ulang" yang
+// rawan salah ketik.
 //
-// [VERIFIKASI] Nama model di bawah ini sebaiknya dicek ulang terhadap model
-// Gemini yang aktif saat ini.
-const GEMINI_MODEL = "gemini-flash-latest";
-const GEMINI_ENDPOINT = (model, key) =>
-  `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
+// AI (Gemini/Claude/Groq) dipakai untuk: (1) fallback transkrip kalau PDF
+// hasil scan/gambar, (2) ekstrak tabel suara TPS dari teks, (3) menjawab
+// pertanyaan di Tab 2/3. Ketiga provider bisa dipasang key-nya sendiri-
+// sendiri (menu "Kelola AI Key") -- dicoba berurutan Gemini -> Claude -> Groq,
+// pindah ke key/provider berikutnya otomatis kalau satu kena limit.
+//
+// [VERIFIKASI] Nama model tiap provider di bawah ini sebaiknya dicek ulang
+// terhadap model yang aktif saat ini (penamaan model berubah dari waktu ke
+// waktu untuk ketiga provider).
+const PROVIDERS = [
+  { id: "gemini", label: "Gemini", model: "gemini-flash-latest", supportsPdf: true },
+  { id: "claude", label: "Claude", model: "claude-sonnet-5", supportsPdf: true },
+  { id: "groq", label: "Groq", model: "openai/gpt-oss-120b", supportsPdf: false },
+];
 
-const KEY_STORAGE = "ai_pemilu_gemini_keys";
-
-const geminiKeys = {
-  list() {
+const providerKeys = {
+  storageKey(providerId) {
+    return `ai_pemilu_keys_${providerId}`;
+  },
+  list(providerId) {
     try {
-      return JSON.parse(localStorage.getItem(KEY_STORAGE) || "[]");
+      return JSON.parse(localStorage.getItem(providerKeys.storageKey(providerId)) || "[]");
     } catch {
       return [];
     }
   },
-  save(keys) {
-    localStorage.setItem(KEY_STORAGE, JSON.stringify(keys));
+  save(providerId, keys) {
+    localStorage.setItem(providerKeys.storageKey(providerId), JSON.stringify(keys));
   },
-  add(key) {
-    const keys = geminiKeys.list();
+  add(providerId, key) {
+    const keys = providerKeys.list(providerId);
     if (!keys.includes(key)) keys.push(key);
-    geminiKeys.save(keys);
+    providerKeys.save(providerId, keys);
   },
-  remove(key) {
-    geminiKeys.save(geminiKeys.list().filter((k) => k !== key));
+  remove(providerId, key) {
+    providerKeys.save(providerId, providerKeys.list(providerId).filter((k) => k !== key));
   },
 };
-
-async function callGemini(parts, { json = false, systemInstruction } = {}) {
-  const keys = geminiKeys.list();
-  if (!keys.length) {
-    throw new Error("Belum ada Gemini API key. Tambahkan lewat menu 'Kelola Gemini API Key'.");
-  }
-
-  const body = {
-    contents: [{ role: "user", parts }],
-    generationConfig: json ? { responseMimeType: "application/json" } : {},
-  };
-  if (systemInstruction) {
-    body.systemInstruction = { parts: [{ text: systemInstruction }] };
-  }
-
-  let lastError;
-  for (let i = 0; i < keys.length; i++) {
-    const key = keys[i];
-    if (i > 0) await sleep(1200 * i);
-
-    try {
-      const res = await fetch(GEMINI_ENDPOINT(GEMINI_MODEL, key), {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(body),
-      });
-
-      if (res.status === 429 || res.status === 403 || res.status === 500 || res.status === 503) {
-        lastError = new Error(`Key #${i + 1} gagal (status ${res.status}).`);
-        continue;
-      }
-      if (res.status === 404) {
-        throw new Error(
-          `Model "${GEMINI_MODEL}" tidak ditemukan (404). Cek daftar model yang tersedia untuk key ini di ` +
-          `https://generativelanguage.googleapis.com/v1beta/models?key=YOUR_KEY, lalu sesuaikan GEMINI_MODEL di gemini.js.`
-        );
-      }
-      if (!res.ok) {
-        const text = await res.text().catch(() => "");
-        throw new Error(`Gemini error ${res.status}: ${text.slice(0, 200)}`);
-      }
-
-      const data = await res.json();
-      const text = data.candidates?.[0]?.content?.parts?.map((p) => p.text || "").join("") || "";
-      return json ? safeParseJson(text) : text;
-    } catch (err) {
-      lastError = err;
-      if (err.message.includes("tidak ditemukan (404)")) throw err;
-    }
-  }
-  throw lastError || new Error("Semua Gemini API key gagal dipakai (kemungkinan semua kena limit kuota).");
-}
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -99,7 +54,7 @@ function safeParseJson(text) {
     if (match) {
       try { return JSON.parse(match[0]); } catch {}
     }
-    throw new Error("Gagal membaca hasil JSON dari Gemini.");
+    throw new Error("Gagal membaca hasil JSON dari AI.");
   }
 }
 
@@ -114,8 +69,118 @@ async function fileToBase64(file) {
   return btoa(binary);
 }
 
-// --- Ekstraksi teks PDF pakai pdf.js, dengan rekonstruksi baris berdasarkan
-// posisi (Y lalu X) supaya tabel tidak berantakan urutan kata/angkanya. ---
+// ---------- Pemanggil mentah per provider (menyeragamkan hasil jadi {ok, status, text}) ----------
+
+async function callGeminiRaw(key, model, textPrompt, base64Pdf, json) {
+  const parts = base64Pdf
+    ? [{ inline_data: { mime_type: "application/pdf", data: base64Pdf } }, { text: textPrompt }]
+    : [{ text: textPrompt }];
+  const body = {
+    contents: [{ role: "user", parts }],
+    generationConfig: json ? { responseMimeType: "application/json" } : {},
+  };
+  const res = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`,
+    { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }
+  );
+  if (!res.ok) return { ok: false, status: res.status };
+  const data = await res.json();
+  const text = data.candidates?.[0]?.content?.parts?.map((p) => p.text || "").join("") || "";
+  return { ok: true, text };
+}
+
+// Claude API dipanggil langsung dari browser -- perlu header khusus yang
+// memang disediakan Anthropic untuk kebutuhan seperti ini (prototyping
+// client-side). Sama seperti Gemini, key-nya ada di browser, bukan server.
+async function callClaudeRaw(key, model, textPrompt, base64Pdf) {
+  const content = [];
+  if (base64Pdf) {
+    content.push({ type: "document", source: { type: "base64", media_type: "application/pdf", data: base64Pdf } });
+  }
+  content.push({ type: "text", text: textPrompt });
+
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-api-key": key,
+      "anthropic-version": "2023-06-01",
+      "anthropic-dangerous-direct-browser-access": "true",
+    },
+    body: JSON.stringify({
+      model,
+      max_tokens: 8192,
+      messages: [{ role: "user", content }],
+    }),
+  });
+  if (!res.ok) return { ok: false, status: res.status };
+  const data = await res.json();
+  const text = (data.content || []).map((b) => b.text || "").join("");
+  return { ok: true, text };
+}
+
+// Groq -- format kompatibel OpenAI, teks saja (tidak dipakai untuk fallback
+// transkrip PDF hasil scan).
+async function callGroqRaw(key, model, textPrompt, json) {
+  const body = { model, messages: [{ role: "user", content: textPrompt }] };
+  if (json) body.response_format = { type: "json_object" };
+
+  const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) return { ok: false, status: res.status };
+  const data = await res.json();
+  const text = data.choices?.[0]?.message?.content || "";
+  return { ok: true, text };
+}
+
+// ---------- Pemanggil terpadu: coba semua key yang terpasang, lintas provider ----------
+// Urutan: Gemini -> Claude -> Groq. Kalau ada PDF yang perlu dibaca (base64Pdf),
+// Groq dilewati (tidak mendukung pembacaan PDF di alur ini).
+async function callAI(textPrompt, { json = false, base64Pdf = null } = {}) {
+  const attempts = [];
+  for (const provider of PROVIDERS) {
+    if (base64Pdf && !provider.supportsPdf) continue;
+    providerKeys.list(provider.id).forEach((key) => attempts.push({ provider, key }));
+  }
+  if (!attempts.length) {
+    throw new Error("Belum ada AI key yang terpasang. Tambahkan lewat menu 'Kelola AI Key'.");
+  }
+
+  let lastError;
+  for (let i = 0; i < attempts.length; i++) {
+    const { provider, key } = attempts[i];
+    if (i > 0) await sleep(1000);
+
+    try {
+      let result;
+      if (provider.id === "gemini") {
+        result = await callGeminiRaw(key, provider.model, textPrompt, base64Pdf, json);
+      } else if (provider.id === "claude") {
+        result = await callClaudeRaw(key, provider.model, textPrompt, base64Pdf);
+      } else {
+        result = await callGroqRaw(key, provider.model, textPrompt, json);
+      }
+
+      if (!result.ok) {
+        if ([429, 403, 500, 503, 529].includes(result.status)) {
+          lastError = new Error(`${provider.label} (key #${i + 1}) gagal, status ${result.status}.`);
+          continue;
+        }
+        throw new Error(`${provider.label} error ${result.status}.`);
+      }
+
+      return json ? safeParseJson(result.text) : result.text;
+    } catch (err) {
+      lastError = err;
+    }
+  }
+  throw lastError || new Error("Semua AI key gagal dipakai (kemungkinan semua kena limit kuota).");
+}
+
+// ---------- Ekstraksi PDF via pdf.js ----------
 async function extractPdfTextViaPdfJs(file) {
   const buf = await file.arrayBuffer();
   const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
@@ -150,27 +215,18 @@ async function extractPdfTextViaPdfJs(file) {
   return fullText.trim();
 }
 
-// Fallback KHUSUS untuk PDF hasil scan/gambar (tidak ada lapisan teks sama
-// sekali) -- baru di sini Gemini dipakai untuk transkrip, karena memang tidak
-// ada cara lain membaca teksnya.
-async function geminiTranscribePdf(file) {
+// Fallback KHUSUS untuk PDF hasil scan/gambar (tidak ada lapisan teks).
+async function aiTranscribePdf(file) {
   const base64 = await fileToBase64(file);
   const prompt = `Dokumen ini kemungkinan hasil scan (tidak ada lapisan teks yang bisa diekstrak langsung).
 Transkrip SELURUH isi dokumen ini apa adanya, termasuk semua angka di tabel, judul, dan catatan kaki.
 Jangan meringkas, jangan menghilangkan bagian apa pun, pertahankan urutan tabel/kolom semirip
 mungkin dengan aslinya. Balas HANYA teks transkripnya saja, tanpa komentar tambahan.`;
 
-  return callGemini(
-    [
-      { inline_data: { mime_type: "application/pdf", data: base64 } },
-      { text: prompt },
-    ],
-    { json: false }
-  );
+  return callAI(prompt, { json: false, base64Pdf: base64 });
 }
 
-// --- Ekstraksi Excel (.xlsx/.xls) pakai SheetJS -- datanya sudah rapi per
-// sel/baris, jadi ini malah LEBIH andal daripada PDF untuk tabel suara TPS.
+// ---------- Ekstraksi Excel (.xlsx/.xls) pakai SheetJS ----------
 async function extractExcelText(file) {
   const buf = await file.arrayBuffer();
   const workbook = XLSX.read(buf, { type: "array" });
@@ -183,8 +239,7 @@ async function extractExcelText(file) {
   return fullText.trim();
 }
 
-// --- Ekstraksi Word (.docx) pakai Mammoth.js -- HANYA format .docx modern,
-// file .doc lama (format Word 97-2003) tidak didukung.
+// ---------- Ekstraksi Word (.docx) pakai Mammoth.js ----------
 async function extractWordText(file) {
   const buf = await file.arrayBuffer();
   const result = await mammoth.extractRawText({ arrayBuffer: buf });
@@ -206,7 +261,6 @@ async function extractDocumentText(file) {
     throw new Error('Format ".doc" (Word lama) tidak didukung -- simpan ulang sebagai ".docx" dulu.');
   }
 
-  // Default: PDF.
   let fullText = "";
   try {
     fullText = await extractPdfTextViaPdfJs(file);
@@ -216,14 +270,12 @@ async function extractDocumentText(file) {
 
   const isSparse = !fullText || fullText.replace(/\s/g, "").length < 200;
   if (isSparse) {
-    fullText = await geminiTranscribePdf(file);
+    fullText = await aiTranscribePdf(file);
   }
   return fullText;
 }
 
-// Opsional: kalau teks dokumen mengandung tabel suara per TPS, ekstrak jadi
-// data terstruktur untuk Tab Infografis. Gagal/tidak relevan -> array kosong,
-// tidak menggagalkan keseluruhan proses upload.
+// Opsional: ekstrak tabel suara TPS dari teks dokumen -> data terstruktur.
 async function geminiExtractTpsVotes(fullText, themeNameValue) {
   const prompt = `Tema: ${themeNameValue}
 
@@ -239,15 +291,14 @@ Kalau TIDAK ada data semacam itu di dokumen ini, balas array kosong: []
 Balas HANYA JSON array tersebut, tanpa markdown apa pun.`;
 
   try {
-    const result = await callGemini([{ text: prompt }], { json: true });
+    const result = await callAI(prompt, { json: true });
     return Array.isArray(result) ? result : [];
   } catch {
     return [];
   }
 }
 
-// --- Tab 2: tanya-jawab, SEMUA dokumen di tema dikirim utuh (bukan ringkasan,
-// bukan pilih-pilih relevansi) ---
+// --- Tab 2: tanya-jawab, SEMUA dokumen di tema dikirim utuh ---
 async function geminiAsk(themeNameValue, documents, question) {
   const context = documents
     .filter((d) => d.full_text)
@@ -266,7 +317,7 @@ Jawab dalam bahasa Indonesia berdasarkan isi dokumen di atas secara rinci dan ak
 angka-angka spesifik kalau ditanya. Kalau informasi tidak ditemukan di dokumen manapun di atas,
 katakan terus terang bagian mana yang tidak tersedia.`;
 
-  return callGemini([{ text: prompt }], { json: false });
+  return callAI(prompt, { json: false });
 }
 
 // --- Tab 3: analisis infografis (data aktual + estimasi AI, untuk chart & peta) ---
@@ -307,5 +358,5 @@ ATURAN PENTING:
 - Kalau tidak relevan menampilkan peta untuk pertanyaan ini, kembalikan "map_points": [].
 - Balas HANYA JSON, tanpa markdown.`;
 
-  return callGemini([{ text: prompt }], { json: true });
+  return callAI(prompt, { json: true });
 }

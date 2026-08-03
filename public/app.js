@@ -52,38 +52,67 @@ function setupKeyModal() {
   const overlay = document.getElementById("keyModalOverlay");
   const openBtn = document.getElementById("geminiKeyBtn");
   const closeBtn = document.getElementById("closeKeyModal");
-  const addBtn = document.getElementById("addKeyBtn");
-  const input = document.getElementById("newKeyInput");
+  const container = document.getElementById("providerKeySections");
 
-  function renderKeys() {
-    const list = document.getElementById("keyList");
-    const keys = geminiKeys.list();
-    list.innerHTML = "";
-    if (!keys.length) {
-      list.innerHTML = `<div style="color:var(--text-muted);font-size:0.8rem;">Belum ada key.</div>`;
-      return;
-    }
-    keys.forEach((k) => {
-      const row = document.createElement("div");
-      row.style.cssText = "display:flex;align-items:center;gap:8px;background:var(--panel-2);border:1px solid var(--border);border-radius:6px;padding:6px 10px;";
-      const masked = k.length > 8 ? `${k.slice(0, 4)}••••${k.slice(-4)}` : "••••";
-      row.innerHTML = `<span style="flex:1;font-size:0.78rem;">${masked}</span>`;
-      const del = document.createElement("button");
-      del.textContent = "Hapus";
-      del.className = "btn btn-danger";
-      del.style.cssText = "padding:3px 8px;font-size:0.7rem;";
-      del.addEventListener("click", () => { geminiKeys.remove(k); renderKeys(); });
-      row.appendChild(del);
-      list.appendChild(row);
+  const providerHints = {
+    gemini: "Model: " + PROVIDERS.find((p) => p.id === "gemini").model + " · aistudio.google.com",
+    claude: "Model: " + PROVIDERS.find((p) => p.id === "claude").model + " · console.anthropic.com",
+    groq: "Model: " + PROVIDERS.find((p) => p.id === "groq").model + " · console.groq.com (teks saja, tidak baca PDF scan)",
+  };
+
+  function renderAll() {
+    container.innerHTML = "";
+    PROVIDERS.forEach((provider) => {
+      const section = document.createElement("div");
+      section.className = "provider-section";
+      section.innerHTML = `
+        <h3>${provider.label}</h3>
+        <p class="phint">${providerHints[provider.id] || ""}</p>
+        <div style="display:flex;gap:8px;margin-bottom:8px;">
+          <input type="text" class="pkey-input" placeholder="Tempel ${provider.label} API key…" style="flex:1;" />
+          <button class="btn btn-primary pkey-add">Tambah</button>
+        </div>
+        <div class="pkey-list mono"></div>
+      `;
+
+      const input = section.querySelector(".pkey-input");
+      const addBtn = section.querySelector(".pkey-add");
+      const list = section.querySelector(".pkey-list");
+
+      function renderKeys() {
+        const keys = providerKeys.list(provider.id);
+        list.innerHTML = "";
+        if (!keys.length) {
+          list.innerHTML = `<div style="color:var(--text-muted);font-size:0.78rem;">Belum ada key.</div>`;
+          return;
+        }
+        keys.forEach((k) => {
+          const row = document.createElement("div");
+          row.className = "provider-key-row";
+          const masked = k.length > 8 ? `${k.slice(0, 4)}••••${k.slice(-4)}` : "••••";
+          row.innerHTML = `<span>${masked}</span>`;
+          const del = document.createElement("button");
+          del.textContent = "Hapus";
+          del.className = "btn btn-danger";
+          del.style.cssText = "padding:3px 8px;font-size:0.7rem;";
+          del.addEventListener("click", () => { providerKeys.remove(provider.id, k); renderKeys(); });
+          row.appendChild(del);
+          list.appendChild(row);
+        });
+      }
+
+      addBtn.addEventListener("click", () => {
+        const val = input.value.trim();
+        if (val) { providerKeys.add(provider.id, val); input.value = ""; renderKeys(); }
+      });
+
+      renderKeys();
+      container.appendChild(section);
     });
   }
 
-  openBtn.addEventListener("click", () => { renderKeys(); overlay.style.display = "flex"; });
+  openBtn.addEventListener("click", () => { renderAll(); overlay.style.display = "flex"; });
   closeBtn.addEventListener("click", () => { overlay.style.display = "none"; });
-  addBtn.addEventListener("click", () => {
-    const val = input.value.trim();
-    if (val) { geminiKeys.add(val); input.value = ""; renderKeys(); }
-  });
 }
 
 // ================= Tema (dipakai bersama semua tab) =================

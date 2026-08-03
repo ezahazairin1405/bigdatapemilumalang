@@ -180,6 +180,13 @@
   .metric-card .label{font-size:0.75rem;color:var(--text-muted);margin-top:2px;}
 
   .empty-hint{color:var(--text-muted);font-size:0.85rem;font-style:italic;}
+
+  .provider-section{margin-top:18px;padding-top:14px;border-top:1px solid var(--border);}
+  .provider-section:first-child{margin-top:0;padding-top:0;border-top:none;}
+  .provider-section h3{font-size:0.92rem;margin:0 0 4px;display:flex;align-items:center;gap:8px;}
+  .provider-section .phint{color:var(--text-muted);font-size:0.74rem;margin:0 0 8px;}
+  .provider-key-row{display:flex;align-items:center;gap:8px;background:var(--panel-2);border:1px solid var(--border);border-radius:6px;padding:6px 10px;margin-bottom:6px;}
+  .provider-key-row span{flex:1;font-size:0.78rem;}
 </style>
 </head>
 <body>
@@ -192,7 +199,7 @@
   <button class="tab-btn" data-tab="infografis"><span class="n">03</span> Infografis</button>
 
   <div class="sidebar-footer">
-    <button class="btn btn-ghost" id="geminiKeyBtn" style="font-size:0.78rem;">Kelola Gemini API Key</button>
+    <button class="btn btn-ghost" id="geminiKeyBtn" style="font-size:0.78rem;">Kelola AI Key</button>
     <div class="user-chip mono" id="userChip"></div>
     <button class="btn btn-ghost" id="logoutBtn" style="font-size:0.78rem;">Keluar</button>
   </div>
@@ -270,17 +277,15 @@
   </section>
 </main>
 
-<!-- Modal kelola Gemini API key -->
-<div id="keyModalOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.55);align-items:center;justify-content:center;z-index:50;">
-  <div style="background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:24px;width:100%;max-width:440px;">
-    <h2 style="margin-top:0;">Gemini API Key</h2>
-    <p style="color:var(--text-muted);font-size:0.82rem;">Disimpan di browser ini saja. Bisa isi lebih dari satu — dipakai bergantian otomatis kalau satu key kena limit kuota.</p>
-    <div style="display:flex;gap:8px;margin:14px 0;">
-      <input type="text" id="newKeyInput" placeholder="Tempel API key di sini…" style="flex:1;" />
-      <button class="btn btn-primary" id="addKeyBtn">Tambah</button>
-    </div>
-    <div id="keyList" class="mono" style="display:flex;flex-direction:column;gap:6px;max-height:200px;overflow-y:auto;"></div>
-    <button class="btn btn-ghost" id="closeKeyModal" style="margin-top:18px;width:100%;">Tutup</button>
+<!-- Modal kelola AI key (Gemini/Claude/Groq) -->
+<div id="keyModalOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.55);align-items:center;justify-content:center;z-index:50;overflow-y:auto;padding:30px 0;">
+  <div style="background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:24px;width:100%;max-width:460px;">
+    <h2 style="margin-top:0;">Kelola AI Key</h2>
+    <p style="color:var(--text-muted);font-size:0.82rem;">Disimpan di browser ini saja. Dicoba berurutan Gemini → Claude → Groq, otomatis pindah kalau satu key kena limit. Isi minimal 1 provider untuk mulai bertanya.</p>
+
+    <div id="providerKeySections"></div>
+
+    <button class="btn btn-ghost" id="closeKeyModal" style="margin-top:8px;width:100%;">Tutup</button>
   </div>
 </div>
 
