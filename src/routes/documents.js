@@ -1,11 +1,10 @@
 import { json } from "../utils.js";
-import { deleteDocumentFile } from "./files.js";
 
 export async function listDocuments(request, env) {
   const url = new URL(request.url);
   const themeId = url.searchParams.get("theme_id");
 
-  let query = `SELECT id, theme_id, original_name, status, summary, extracted_data,
+  let query = `SELECT id, theme_id, original_name, status, full_text,
                       error_message, uploaded_at
                FROM documents`;
   const binds = [];
@@ -19,9 +18,9 @@ export async function listDocuments(request, env) {
   return json({ documents: results });
 }
 
-// Kalau ada file dengan nama sama di tema yang sama, dianggap "versi baru"
-// dari dokumen itu -- yang lama dihapus dulu (termasuk tps_votes & file R2-nya)
-// supaya tidak menumpuk jadi duplikat.
+// Insert dulu (status 'menunggu'), tidak ada lagi pengecekan/hapus otomatis
+// untuk nama file yang sama -- duplikat dibiarkan ada, dihapus manual lewat
+// tombol hapus kalau memang mau.
 export async function createDocument(request, env) {
   const body = await request.json().catch(() => ({}));
   const { theme_id, original_name } = body;
@@ -29,22 +28,12 @@ export async function createDocument(request, env) {
     return json({ error: "theme_id dan original_name wajib diisi." }, 400);
   }
 
-  const existing = await env.DB.prepare(
-    "SELECT id FROM documents WHERE theme_id = ? AND original_name = ?"
-  ).bind(theme_id, original_name).first();
-
-  if (existing) {
-    await env.DB.prepare("DELETE FROM tps_votes WHERE document_id = ?").bind(existing.id).run();
-    await env.DB.prepare("DELETE FROM documents WHERE id = ?").bind(existing.id).run();
-    await deleteDocumentFile(env, existing.id);
-  }
-
   const result = await env.DB.prepare(
     `INSERT INTO documents (theme_id, original_name, status)
      VALUES (?, ?, 'menunggu')`
   ).bind(theme_id, original_name).run();
 
-  return json({ id: result.meta.last_row_id, replaced: !!existing }, 201);
+  return json({ id: result.meta.last_row_id }, 201);
 }
 
 export async function updateDocument(request, env, id) {
@@ -52,10 +41,10 @@ export async function updateDocument(request, env, id) {
   const fields = [];
   const binds = [];
 
-  for (const key of ["status", "summary", "extracted_data", "error_message"]) {
+  for (const key of ["status", "full_text", "error_message"]) {
     if (key in body) {
       fields.push(`${key} = ?`);
-      binds.push(key === "extracted_data" ? JSON.stringify(body[key]) : body[key]);
+      binds.push(body[key]);
     }
   }
   if (!fields.length) return json({ error: "Tidak ada field untuk diupdate." }, 400);
@@ -68,11 +57,10 @@ export async function updateDocument(request, env, id) {
   return json({ success: true });
 }
 
-// Dipakai saat klasifikasi PDF gagal -- file gagal tidak perlu tersimpan
-// permanen, cukup hilang begitu saja supaya tidak menumpuk di daftar.
+// Dipanggil HANYA lewat tombol hapus manual di UI -- tidak ada lagi
+// penghapusan otomatis oleh sistem (baik karena gagal maupun duplikat nama).
 export async function deleteDocument(env, id) {
   await env.DB.prepare("DELETE FROM tps_votes WHERE document_id = ?").bind(id).run();
   await env.DB.prepare("DELETE FROM documents WHERE id = ?").bind(id).run();
-  await deleteDocumentFile(env, id);
   return json({ success: true });
 }
