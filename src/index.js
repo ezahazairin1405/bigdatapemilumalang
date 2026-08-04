@@ -9,7 +9,7 @@ import {
 } from "./auth.js";
 import { json } from "./utils.js";
 import { listThemes, createTheme } from "./routes/themes.js";
-import { listDocuments, createDocument, updateDocument, deleteDocument } from "./routes/documents.js";
+import { listDocuments, createDocument, updateDocument, deleteDocument, moveDocument } from "./routes/documents.js";
 import { saveTpsVotes, listTpsVotes } from "./routes/tps.js";
 import { getKelurahanBoundaries } from "./routes/geo.js";
 import { proxyOpenAiCompatible } from "./routes/aiproxy.js";
@@ -80,6 +80,11 @@ export default {
         }
         if (docMatch && request.method === "DELETE") {
           return await deleteDocument(env, docMatch[1]);
+        }
+        const moveMatch = pathname.match(/^\/api\/documents\/(\d+)\/move$/);
+        if (moveMatch && request.method === "POST") {
+          const body = await request.json().catch(() => ({}));
+          return await moveDocument(env, moveMatch[1], body.theme_id);
         }
         if (pathname === "/api/tps-votes" && request.method === "POST") {
           return await saveTpsVotes(request, env);
