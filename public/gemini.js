@@ -3,28 +3,32 @@
 // supaya angka di tabel akurat, bukan hasil "baca lalu tulis ulang" yang
 // rawan salah ketik.
 //
-// AI (Gemini/OpenRouter) dipakai untuk: (1) fallback transkrip kalau PDF
-// hasil scan/gambar, (2) ekstrak tabel suara TPS dari teks, (3) menjawab
-// pertanyaan di Tab 2/3.
+// AI (Gemini/OpenRouter/Cloudflare Workers AI) dipakai untuk: (1) fallback
+// transkrip kalau PDF hasil scan/gambar, (2) ekstrak tabel suara TPS dari
+// teks, (3) menjawab pertanyaan di Tab Infografis & Analisa.
 //
-// Cara pakainya: pilih 1 PROVIDER AKTIF (lewat sidebar), lalu di provider itu
-// bisa ada beberapa key -- tiap key dianggap "penuh" setelah dipakai sejumlah
-// KUOTA (default 20x, bisa diubah di menu "Kelola AI Key"), otomatis pindah
-// ke key berikutnya DI PROVIDER YANG SAMA kalau sudah penuh atau kena error
-// limit sungguhan dari API. Kalau semua key di provider aktif penuh, perlu
-// direset manual atau pindah provider aktif -- tidak otomatis lompat ke
-// provider lain (supaya pemakaian tetap sesuai provider yang Anda pilih).
+// Cara pakainya: pilih 1 PROVIDER AKTIF (lewat sidebar). Gemini & OpenRouter
+// butuh API key (bisa lebih dari 1, tiap key dianggap "penuh" setelah
+// dipakai sejumlah KUOTA -- default 20x, bisa diubah di menu "Kelola AI Key"
+// -- otomatis pindah ke key berikutnya kalau sudah penuh/kena limit).
+// **Cloudflare Workers AI TIDAK butuh key sama sekali** -- otomatis pakai
+// akun Cloudflare yang deploy proyek ini, jalan langsung tanpa setup apa pun.
+// Kalau semua key di provider aktif penuh, perlu direset manual atau pindah
+// provider aktif -- tidak otomatis lompat ke provider lain.
 // Pengecualian: transkrip PDF hasil scan cuma didukung Gemini, jadi untuk itu
 // selalu dipakai Gemini apa pun provider aktifnya.
 //
-// [VERIFIKASI] Nama model Gemini di bawah sebaiknya dicek ulang terhadap
-// model yang aktif saat ini. Untuk OpenRouter dipakai alias "openrouter/free"
-// -- ini BUKAN 1 model tertentu, tapi router otomatis milik OpenRouter sendiri
-// yang selalu memilihkan model gratis yang sedang tersedia, supaya tidak
-// basi lagi walau daftar model gratis mereka sering berubah.
+// [VERIFIKASI] Nama model tiap provider di bawah sebaiknya dicek ulang
+// terhadap model yang aktif saat ini. Untuk OpenRouter dipakai alias
+// "openrouter/free" (router otomatis milik OpenRouter, selalu memilihkan
+// model gratis yang tersedia). Untuk Workers AI dipakai
+// "@cf/zai-org/glm-4.7-flash" (131K token konteks) -- Cloudflare merilis
+// model baru & mempensiunkan yang lama tiap minggu, cek daftar terbaru di
+// developers.cloudflare.com/workers-ai/models kalau model ini sudah tidak ada.
 const PROVIDERS = [
   { id: "gemini", label: "Gemini", model: "gemini-flash-latest", supportsPdf: true },
   { id: "openrouter", label: "OpenRouter", model: "openrouter/free", supportsPdf: false },
+  { id: "workersai", label: "Cloudflare Workers AI", model: "@cf/zai-org/glm-4.7-flash", supportsPdf: false, noKeyNeeded: true },
 ];
 
 const DEFAULT_QUOTA = 20;
@@ -161,6 +165,20 @@ async function callOpenRouterRaw(key, model, textPrompt, json) {
   return { ok: true, text };
 }
 
+// Cloudflare Workers AI -- TIDAK butuh API key, dipanggil lewat proxy Worker
+// yang meneruskan ke binding env.AI (otomatis pakai akun Cloudflare Anda).
+async function callWorkersAiRaw(model, textPrompt) {
+  const res = await fetch("/api/proxy/workersai", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ model, prompt: textPrompt }),
+  });
+  const bodyText = await res.text();
+  if (!res.ok) return { ok: false, status: res.status, detail: bodyText.slice(0, 400) };
+  const data = JSON.parse(bodyText);
+  return { ok: true, text: data.text || "" };
+}
+
 // ---------- Pemanggil terpadu: coba semua key yang terpasang di provider aktif ----------
 async function callAI(textPrompt, { json = false, base64Pdf = null } = {}) {
   // Transkrip PDF hasil scan cuma didukung Gemini -- untuk kasus ini selalu
@@ -174,6 +192,25 @@ async function callAI(textPrompt, { json = false, base64Pdf = null } = {}) {
   let triedAnyKey = false;
 
   for (const provider of candidateProviders) {
+    // Provider tanpa key (Workers AI) -- langsung dipanggil sekali, tidak ada
+    // daftar key/kuota untuk diputar.
+    if (provider.noKeyNeeded) {
+      triedAnyKey = true;
+      try {
+        const result = await callWorkersAiRaw(provider.model, textPrompt);
+        if (!result.ok) {
+          lastError = new Error(
+            `${provider.label} error ${result.status}${result.detail ? ": " + result.detail : ""}`
+          );
+          continue;
+        }
+        return json ? safeParseJson(result.text) : result.text;
+      } catch (err) {
+        lastError = err;
+      }
+      continue;
+    }
+
     const quota = providerKeys.getQuota(provider.id);
     const usableKeys = providerKeys.list(provider.id).filter((k) => k.used < quota);
 
@@ -344,29 +381,7 @@ Balas HANYA JSON array tersebut, tanpa markdown apa pun.`;
   }
 }
 
-// --- Tab 2: tanya-jawab, SEMUA dokumen di tema dikirim utuh ---
-async function geminiAsk(themeNameValue, documents, question) {
-  const context = documents
-    .filter((d) => d.full_text)
-    .map((d) => `=== Dokumen: ${d.original_name} ===\n${d.full_text}`)
-    .join("\n\n");
-
-  const prompt = `Tema: ${themeNameValue}
-
-Berikut seluruh isi dokumen yang tersedia di tema ini (teks lengkap, bukan ringkasan):
-
-${context || "(belum ada dokumen dengan isi yang berhasil diekstrak)"}
-
-Pertanyaan: ${question}
-
-Jawab dalam bahasa Indonesia berdasarkan isi dokumen di atas secara rinci dan akurat, termasuk
-angka-angka spesifik kalau ditanya. Kalau informasi tidak ditemukan di dokumen manapun di atas,
-katakan terus terang bagian mana yang tidak tersedia.`;
-
-  return callAI(prompt, { json: false });
-}
-
-// --- Tab 3: analisis infografis (data aktual + estimasi AI, untuk chart & peta) ---
+// --- Infografis & Analisa: tanya bebas ATAU analitis, SEMUA dokumen di tema dikirim utuh ---
 async function geminiInfografis(themeNameValue, documents, tpsRows, question) {
   const context = documents
     .filter((d) => d.full_text)
@@ -383,11 +398,11 @@ ${context || "(tidak ada)"}
 Data suara per TPS yang tersedia (JSON):
 ${tpsSample || "[]"}
 
-Pertanyaan analitis: ${question}
+Pertanyaan: ${question}
 
 Susun jawaban sebagai JSON dengan struktur PERSIS:
 {
-  "narrative": "penjelasan analisis 3-8 kalimat, bahasa Indonesia",
+  "narrative": "jawaban lengkap dalam bahasa Indonesia -- boleh cuma penjelasan teks biasa kalau pertanyaannya bersifat umum/faktual, atau disertai analisis kalau pertanyaannya analitis",
   "metrics": [ {"label": "...", "value": "...", "type": "data"} ],
   "chart": {
     "type": "bar",
@@ -397,11 +412,13 @@ Susun jawaban sebagai JSON dengan struktur PERSIS:
   "map_points": [ {"kelurahan": "...", "kecamatan": "...", "kabupaten": "...", "score": 0, "type": "estimasi"} ]
 }
 ATURAN PENTING:
+- Kalau pertanyaannya cuma butuh jawaban teks biasa (bukan data angka/wilayah), cukup isi
+  "narrative" dengan lengkap dan kembalikan "metrics": [], "chart": {"labels": [], "datasets": []},
+  "map_points": [] -- jangan dipaksakan bikin chart/peta kalau memang tidak relevan.
 - Field "type" WAJIB diisi "data" kalau angka itu benar-benar ada di dokumen/data TPS,
   atau "estimasi" kalau itu hasil penalaran/prediksi Anda sendiri (termasuk yang berbasis pola survei).
 - Boleh campur "data" dan "estimasi" dalam satu chart/metrics, tapi tiap entri harus jelas jenisnya.
 - "map_points.score" adalah angka 0-100 (semakin tinggi = semakin kuat/berpotensi), dipakai untuk mewarnai peta choropleth per kelurahan.
-- Kalau tidak relevan menampilkan peta untuk pertanyaan ini, kembalikan "map_points": [].
 - Balas HANYA JSON, tanpa markdown.`;
 
   return callAI(prompt, { json: true });

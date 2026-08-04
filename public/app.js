@@ -18,9 +18,9 @@ let themesCache = [];
     const inputTabBtn = document.querySelector('.tab-btn[data-tab="input"]');
     if (inputTabBtn) inputTabBtn.remove();
     document.getElementById("tab-input")?.remove();
-    // Kalau tab aktif defaultnya input, pindah ke Elaborasi.
-    document.querySelector('.tab-btn[data-tab="elaborasi"]')?.classList.add("active");
-    document.getElementById("tab-elaborasi")?.classList.add("active");
+    // Kalau tab aktif defaultnya input, pindah ke Infografis & Analisa.
+    document.querySelector('.tab-btn[data-tab="infografis"]')?.classList.add("active");
+    document.getElementById("tab-infografis")?.classList.add("active");
   }
 
   document.getElementById("logoutBtn").addEventListener("click", async () => {
@@ -33,7 +33,6 @@ let themesCache = [];
   setupProviderSelect();
   await refreshThemes();
   if (currentRole === "admin") setupTab1();
-  setupTab2();
   setupTab3();
 })();
 
@@ -68,6 +67,7 @@ function setupKeyModal() {
   const providerHints = {
     gemini: "Model: " + PROVIDERS.find((p) => p.id === "gemini").model + " · aistudio.google.com",
     openrouter: "Model: " + PROVIDERS.find((p) => p.id === "openrouter").model + " · openrouter.ai/keys (teks saja, tidak baca PDF scan)",
+    workersai: "Model: " + PROVIDERS.find((p) => p.id === "workersai").model + " · tidak perlu API key sama sekali, otomatis pakai akun Cloudflare Anda (teks saja, tidak baca PDF scan)",
   };
 
   function renderAll() {
@@ -75,6 +75,17 @@ function setupKeyModal() {
     PROVIDERS.forEach((provider) => {
       const section = document.createElement("div");
       section.className = "provider-section";
+
+      if (provider.noKeyNeeded) {
+        section.innerHTML = `
+          <h3>${provider.label} ✓</h3>
+          <p class="phint">${providerHints[provider.id] || ""}</p>
+          <div class="usage-badge usage-ok" style="display:inline-block;">Siap dipakai, tanpa setup</div>
+        `;
+        container.appendChild(section);
+        return;
+      }
+
       section.innerHTML = `
         <h3>${provider.label}</h3>
         <p class="phint">${providerHints[provider.id] || ""}</p>
@@ -154,7 +165,7 @@ async function refreshThemes() {
     .map((t) => `<option value="${t.id}">${escapeHtml(t.name)} (${t.document_count}/15${t.document_count >= 15 ? " · PENUH" : ""})</option>`)
     .join("");
 
-  for (const id of ["themeSelect", "elaborasiThemeSelect", "infografisThemeSelect"]) {
+  for (const id of ["themeSelect", "infografisThemeSelect"]) {
     const el = document.getElementById(id);
     if (!el) continue;
     const current = el.value;
@@ -356,53 +367,7 @@ async function renderThemeGroups() {
   }
 }
 
-// ================= TAB 2: Elaborasi Data =================
-function setupTab2() {
-  const select = document.getElementById("elaborasiThemeSelect");
-  const empty = document.getElementById("elaborasiEmpty");
-  const chatBox = document.getElementById("elaborasiChat");
-  const messages = document.getElementById("elaborasiMessages");
-  const form = document.getElementById("elaborasiForm");
-  let activeThemeId = null;
-  let activeDocs = [];
-
-  select.addEventListener("change", async () => {
-    activeThemeId = select.value;
-    if (!activeThemeId) { empty.style.display = "block"; chatBox.style.display = "none"; return; }
-    activeDocs = await api.listDocuments(activeThemeId);
-    empty.style.display = "none";
-    chatBox.style.display = "block";
-    messages.innerHTML = `<div class="msg bot">Siap menjawab soal tema "${escapeHtml(themeName(activeThemeId))}" (${activeDocs.length} dokumen).</div>`;
-  });
-
-  form.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const input = document.getElementById("elaborasiInput");
-    const question = input.value.trim();
-    if (!question || !activeThemeId) return;
-    addMsg(messages, "user", escapeHtml(question));
-    input.value = "";
-    const loading = addMsg(messages, "bot", "Membaca seluruh dokumen di tema ini…");
-
-    try {
-      const answer = await geminiAsk(themeName(activeThemeId), activeDocs, question);
-      loading.innerHTML = escapeHtml(answer).replace(/\n/g, "<br>");
-    } catch (err) {
-      loading.textContent = "Gagal: " + err.message;
-    }
-  });
-}
-
-function addMsg(container, role, html) {
-  const div = document.createElement("div");
-  div.className = "msg " + role;
-  div.innerHTML = html;
-  container.appendChild(div);
-  container.scrollTop = container.scrollHeight;
-  return div;
-}
-
-// ================= TAB 3: Infografis =================
+// ================= TAB 2: Infografis & Analisa =================
 let leafletMap = null;
 let leafletLayer = null;
 let currentChart = null;
