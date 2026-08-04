@@ -21,5 +21,11 @@
 			"database_id": "d90d75f7-b81d-4634-888a-c23ef100802f",
 			"remote": true
 		}
-	]
+	 ],
+
+  // Workers AI -- tidak perlu API key sama sekali, otomatis pakai akun
+  // Cloudflare yang sedang deploy proyek ini.
+  "ai": {
+    "binding": "AI"
+  }
 }
