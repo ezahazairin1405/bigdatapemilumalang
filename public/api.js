@@ -12,12 +12,16 @@ const api = {
     const res = await fetch('/api/themes');
     return (await res.json()).themes || [];
   },
-  async createTheme(name) {
+  async createTheme(name, kind) {
     const res = await fetch('/api/themes', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ name }),
+      body: JSON.stringify({ name, kind: kind === 'ai' ? 'ai' : 'data' }),
     });
+    return res.json();
+  },
+  async deleteTheme(id) {
+    const res = await fetch(`/api/themes/${id}`, { method: 'DELETE' });
     return res.json();
   },
 
@@ -51,6 +55,14 @@ const api = {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ theme_id: newThemeId }),
+    });
+    return res.json();
+  },
+  async duplicateDocument(id, targetThemeId) {
+    const res = await fetch(`/api/documents/${id}/duplicate`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ theme_id: targetThemeId }),
     });
     return res.json();
   },

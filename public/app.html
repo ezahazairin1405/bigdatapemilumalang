@@ -128,14 +128,18 @@
   .theme-groups{margin-top:28px;display:flex;flex-direction:column;gap:10px;}
   .theme-group{background:var(--panel);border:1px solid var(--border);border-radius:8px;overflow:hidden;}
   .theme-group-header{
-    width:100%;display:flex;align-items:center;gap:10px;
-    background:transparent;border:none;color:var(--text);
-    padding:12px 14px;cursor:pointer;font-size:0.9rem;text-align:left;
+    width:100%;display:flex;align-items:center;gap:8px;
+    padding:8px 10px 8px 14px;
   }
   .theme-group-header:hover{background:var(--panel-2);}
-  .theme-group-header .chevron{color:var(--accent);width:12px;}
-  .theme-group-header .tname{flex:1;font-weight:600;}
-  .theme-group-header .count{color:var(--text-muted);font-size:0.72rem;}
+  .theme-toggle-btn{
+    flex:1;display:flex;align-items:center;gap:10px;min-width:0;
+    background:transparent;border:none;color:var(--text);
+    cursor:pointer;font-size:0.9rem;text-align:left;padding:4px 0;font-family:inherit;
+  }
+  .theme-toggle-btn .chevron{color:var(--accent);width:12px;flex-shrink:0;}
+  .theme-toggle-btn .tname{flex:1;font-weight:600;}
+  .theme-toggle-btn .count{color:var(--text-muted);font-size:0.72rem;white-space:nowrap;}
   .theme-group-body{padding:0 14px 14px;}
   .doc-card{
     background:var(--panel-2);
@@ -236,6 +240,7 @@
   .quota-row input{width:64px;padding:5px 8px;font-size:0.8rem;}
   .usage-badge{font-family:'IBM Plex Mono';font-size:0.68rem;padding:2px 7px;border-radius:999px;white-space:nowrap;}
   .usage-ok{background:rgba(51,214,192,0.12);color:var(--accent);}
+  .usage-ai{background:rgba(232,162,61,0.12);color:var(--amber);}
   .usage-full{background:rgba(232,96,122,0.12);color:var(--danger);}
 </style>
 </head>
@@ -269,8 +274,13 @@
       <select id="themeSelect"><option value="">— Pilih tema yang sudah ada —</option></select>
       <span class="or">atau</span>
       <input type="text" id="newThemeInput" placeholder="Judul tema baru…" />
+      <select id="newThemeKind" style="flex:0 0 170px;min-width:170px;">
+        <option value="data">Data Infografis</option>
+        <option value="ai">Tema AI (maks 15)</option>
+      </select>
       <button class="btn btn-primary" id="createThemeBtn">Buat Tema</button>
     </div>
+    <p class="hint" style="margin:-10px 0 18px;">"Data Infografis" tanpa batas jumlah dokumen. "Tema AI" dibatasi 15 dokumen, diisi dengan menduplikasi dokumen dari tema Data Infografis (tombol "Salin ke Tema AI" di tiap dokumen) -- dipakai khusus Tab Elaborasi Data.</p>
 
     <div class="dropzone" id="dropzone" tabindex="0" role="button">
       <div>Klik atau tarik file PDF, Excel, atau Word ke sini</div>

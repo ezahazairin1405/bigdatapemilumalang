@@ -162,16 +162,35 @@ function setupKeyModal() {
 // ================= Tema (dipakai bersama semua tab) =================
 async function refreshThemes() {
   themesCache = await api.listThemes();
-  const options = themesCache
+
+  const dataThemes = themesCache.filter((t) => t.kind !== "ai");
+  const aiThemes = themesCache.filter((t) => t.kind === "ai");
+
+  const dataOptions = dataThemes
+    .map((t) => `<option value="${t.id}">${escapeHtml(t.name)} (${t.document_count} dok)</option>`)
+    .join("");
+  const aiOptions = aiThemes
     .map((t) => `<option value="${t.id}">${escapeHtml(t.name)} (${t.document_count}/15${t.document_count >= 15 ? " · PENUH" : ""})</option>`)
     .join("");
 
-  for (const id of ["themeSelect", "elaborasiThemeSelect", "infografisThemeSelect"]) {
+  const groupedOptions =
+    (dataThemes.length ? `<optgroup label="Data Infografis">${dataOptions}</optgroup>` : "") +
+    (aiThemes.length ? `<optgroup label="Tema AI">${aiOptions}</optgroup>` : "");
+
+  for (const id of ["themeSelect", "infografisThemeSelect"]) {
     const el = document.getElementById(id);
     if (!el) continue;
     const current = el.value;
-    el.innerHTML = `<option value="">— Pilih tema —</option>` + options;
+    el.innerHTML = `<option value="">— Pilih tema —</option>` + groupedOptions;
     if (current) el.value = current;
+  }
+
+  // Elaborasi Data cuma boleh pakai Tema AI (supaya tidak kena limit konteks).
+  const elEl = document.getElementById("elaborasiThemeSelect");
+  if (elEl) {
+    const current = elEl.value;
+    elEl.innerHTML = `<option value="">— Pilih Tema AI —</option>` + aiOptions;
+    if (current) elEl.value = current;
   }
 }
 
@@ -193,9 +212,10 @@ function setupTab1() {
 
   document.getElementById("createThemeBtn").addEventListener("click", async () => {
     const input = document.getElementById("newThemeInput");
+    const kindSelect = document.getElementById("newThemeKind");
     const name = input.value.trim();
     if (!name) return;
-    const res = await api.createTheme(name);
+    const res = await api.createTheme(name, kindSelect.value);
     if (res.error) { alert(res.error); return; }
     input.value = "";
     await refreshThemes();
@@ -291,15 +311,23 @@ async function renderThemeGroups() {
   if (!container) return;
   container.innerHTML = "";
   for (const theme of themesCache) {
+    const isAi = theme.kind === "ai";
     const group = document.createElement("div");
     group.className = "theme-group";
 
-    const header = document.createElement("button");
+    const header = document.createElement("div");
     header.className = "theme-group-header";
+    const countLabel = isAi
+      ? `${theme.document_count}/15 dokumen${theme.document_count >= 15 ? ' <span class="usage-badge usage-full">PENUH</span>' : ""}`
+      : `${theme.document_count} dokumen`;
     header.innerHTML = `
-      <span class="chevron">▸</span>
-      <span class="tname">${escapeHtml(theme.name)}</span>
-      <span class="mono count">${theme.document_count}/15 dokumen</span>${theme.document_count >= 15 ? '<span class="usage-badge usage-full" style="margin-left:6px;">PENUH</span>' : ""}
+      <button class="theme-toggle-btn">
+        <span class="chevron">▸</span>
+        <span class="tname">${escapeHtml(theme.name)}</span>
+        <span class="usage-badge ${isAi ? "usage-ai" : "usage-ok"}" style="margin-right:6px;">${isAi ? "Tema AI" : "Data Infografis"}</span>
+        <span class="mono count">${countLabel}</span>
+      </button>
+      <button class="row-delete" title="Hapus tema ini beserta seluruh isinya">✕</button>
     `;
 
     const body = document.createElement("div");
@@ -313,6 +341,10 @@ async function renderThemeGroups() {
       body.innerHTML = "";
       const otherThemes = themesCache.filter((t) => t.id !== theme.id);
       const moveOptions = otherThemes
+        .map((t) => `<option value="${t.id}">${escapeHtml(t.name)} (${t.kind === "ai" ? `${t.document_count}/15` : `${t.document_count} dok`})</option>`)
+        .join("");
+      const aiThemeOptions = themesCache
+        .filter((t) => t.kind === "ai")
         .map((t) => `<option value="${t.id}">${escapeHtml(t.name)} (${t.document_count}/15)</option>`)
         .join("");
 
@@ -322,6 +354,13 @@ async function renderThemeGroups() {
         card.innerHTML = `
           <div class="doc-card-row">
             <div class="fname">${escapeHtml(d.original_name)} — <span class="status-pill status-${d.status}">${d.status}</span></div>
+            ${!isAi ? `
+              <select class="dup-select" style="font-size:0.72rem;padding:3px 6px;">
+                <option value="">Salin ke Tema AI…</option>
+                <option value="__new__">+ Buat Tema AI baru…</option>
+                ${aiThemeOptions}
+              </select>
+            ` : ""}
             <select class="move-select" style="font-size:0.72rem;padding:3px 6px;">
               <option value="">Pindah ke tema…</option>
               ${moveOptions}
@@ -331,6 +370,25 @@ async function renderThemeGroups() {
           ${d.error_message ? `<div class="summary" style="color:var(--danger);">${escapeHtml(d.error_message)}</div>` : ""}
           ${d.full_text ? `<div class="summary">${escapeHtml(d.full_text.slice(0, 220))}${d.full_text.length > 220 ? "…" : ""}</div>` : ""}
         `;
+        const dupSelect = card.querySelector(".dup-select");
+        if (dupSelect) {
+          dupSelect.addEventListener("change", async (e) => {
+            let targetId = e.target.value;
+            if (!targetId) return;
+            if (targetId === "__new__") {
+              const name = prompt("Nama Tema AI baru:");
+              if (!name || !name.trim()) { e.target.value = ""; return; }
+              const created = await api.createTheme(name.trim(), "ai");
+              if (created.error) { alert(created.error); e.target.value = ""; return; }
+              targetId = created.theme.id;
+            }
+            const res = await api.duplicateDocument(d.id, targetId);
+            if (res.error) { alert(res.error); e.target.value = ""; return; }
+            await refreshThemes();
+            await renderThemeGroups();
+            alert(`"${d.original_name}" berhasil disalin ke Tema AI.`);
+          });
+        }
         card.querySelector(".move-select").addEventListener("change", async (e) => {
           const newThemeId = e.target.value;
           if (!newThemeId) return;
@@ -350,7 +408,7 @@ async function renderThemeGroups() {
       loaded = true;
     }
 
-    header.addEventListener("click", async () => {
+    header.querySelector(".theme-toggle-btn").addEventListener("click", async () => {
       const isOpen = body.style.display !== "none";
       if (isOpen) {
         body.style.display = "none";
@@ -360,6 +418,14 @@ async function renderThemeGroups() {
       header.querySelector(".chevron").textContent = "▾";
       body.style.display = "block";
       if (!loaded) await loadDocs();
+    });
+
+    header.querySelector(".row-delete").addEventListener("click", async () => {
+      if (!confirm(`Hapus tema "${theme.name}" beserta SELURUH dokumen di dalamnya (${theme.document_count} dokumen)? Ini tidak bisa dibatalkan.`)) return;
+      const res = await api.deleteTheme(theme.id);
+      if (res.error) { alert(res.error); return; }
+      await refreshThemes();
+      await renderThemeGroups();
     });
 
     group.appendChild(header);
