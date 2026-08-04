@@ -46,6 +46,14 @@ const api = {
     const res = await fetch(`/api/documents/${id}`, { method: 'DELETE' });
     return res.json();
   },
+  async moveDocument(id, newThemeId) {
+    const res = await fetch(`/api/documents/${id}/move`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ theme_id: newThemeId }),
+    });
+    return res.json();
+  },
 
   async listTpsVotes(themeId) {
     const res = await fetch(`/api/tps-votes?theme_id=${encodeURIComponent(themeId)}`);

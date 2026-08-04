@@ -151,7 +151,7 @@ function setupKeyModal() {
 async function refreshThemes() {
   themesCache = await api.listThemes();
   const options = themesCache
-    .map((t) => `<option value="${t.id}">${escapeHtml(t.name)} (${t.document_count})</option>`)
+    .map((t) => `<option value="${t.id}">${escapeHtml(t.name)} (${t.document_count}/15${t.document_count >= 15 ? " · PENUH" : ""})</option>`)
     .join("");
 
   for (const id of ["themeSelect", "elaborasiThemeSelect", "infografisThemeSelect"]) {
@@ -249,7 +249,7 @@ function setupTab1() {
   async function processOne({ file, themeId, row }) {
     setStatus(row, "diproses");
     const created = await api.createDocument(themeId, file.name);
-    if (created.error) { setStatus(row, "gagal", "gagal simpan"); return; }
+    if (created.error) { setStatus(row, "gagal", created.error.slice(0, 60)); return; }
     const docId = created.id;
 
     try {
@@ -287,7 +287,7 @@ async function renderThemeGroups() {
     header.innerHTML = `
       <span class="chevron">▸</span>
       <span class="tname">${escapeHtml(theme.name)}</span>
-      <span class="mono count">${theme.document_count} dokumen</span>
+      <span class="mono count">${theme.document_count}/15 dokumen</span>${theme.document_count >= 15 ? '<span class="usage-badge usage-full" style="margin-left:6px;">PENUH</span>' : ""}
     `;
 
     const body = document.createElement("div");
@@ -299,17 +299,34 @@ async function renderThemeGroups() {
       body.innerHTML = `<div class="empty-hint">Memuat…</div>`;
       const docs = await api.listDocuments(theme.id);
       body.innerHTML = "";
+      const otherThemes = themesCache.filter((t) => t.id !== theme.id);
+      const moveOptions = otherThemes
+        .map((t) => `<option value="${t.id}">${escapeHtml(t.name)} (${t.document_count}/15)</option>`)
+        .join("");
+
       docs.forEach((d) => {
         const card = document.createElement("div");
         card.className = "doc-card";
         card.innerHTML = `
           <div class="doc-card-row">
             <div class="fname">${escapeHtml(d.original_name)} — <span class="status-pill status-${d.status}">${d.status}</span></div>
+            <select class="move-select" style="font-size:0.72rem;padding:3px 6px;">
+              <option value="">Pindah ke tema…</option>
+              ${moveOptions}
+            </select>
             <button class="row-delete" title="Hapus dokumen ini">✕</button>
           </div>
           ${d.error_message ? `<div class="summary" style="color:var(--danger);">${escapeHtml(d.error_message)}</div>` : ""}
           ${d.full_text ? `<div class="summary">${escapeHtml(d.full_text.slice(0, 220))}${d.full_text.length > 220 ? "…" : ""}</div>` : ""}
         `;
+        card.querySelector(".move-select").addEventListener("change", async (e) => {
+          const newThemeId = e.target.value;
+          if (!newThemeId) return;
+          const res = await api.moveDocument(d.id, newThemeId);
+          if (res.error) { alert(res.error); e.target.value = ""; return; }
+          await refreshThemes();
+          await renderThemeGroups();
+        });
         card.querySelector(".row-delete").addEventListener("click", async () => {
           if (!confirm(`Hapus "${d.original_name}" secara permanen?`)) return;
           await api.deleteDocument(d.id);
