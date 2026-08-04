@@ -130,6 +130,19 @@ public/app.js                 logika UI ketiga tab + peran
 
 ## Konsekuensi yang perlu diketahui
 
+- **Maksimal 15 dokumen per tema** -- ini batas keras (bukan sekadar saran).
+  Ditambahkan setelah 1 tema berisi 27 dokumen ternyata gabungan teksnya
+  (~1 juta token) sampai kepentok batas jendela konteks maksimal yang
+  tersedia gratis di provider mana pun (Gemini maupun OpenRouter). 15 dipilih
+  sebagai margin aman berdasarkan rata-rata ukuran dokumen di percobaan itu.
+  Kalau tema sudah penuh (badge "PENUH" muncul di header foldernya), upload
+  baru akan ditolak dengan pesan jelas -- buat tema baru, atau pindahkan
+  beberapa dokumen ke tema lain dulu (lihat poin berikut).
+- **Fitur pindah dokumen antar-tema** -- tiap dokumen di Tab Input Data
+  sekarang punya dropdown "Pindah ke tema…" di sampingnya, supaya tema yang
+  sudah kepenuhan bisa direstrukturisasi jadi beberapa tema lebih kecil tanpa
+  perlu hapus dan unggah ulang dari nol (teks yang sudah diekstrak ikut
+  pindah, tidak diekstrak ulang).
 - **Waktu tunggu jawaban makin lama seiring tema makin banyak dokumennya** --
   karena semua dokumen selalu dikirim utuh tiap kali bertanya (sengaja, sesuai
   keputusan), bukan cuma yang relevan. Kalau nanti dirasa terlalu lambat untuk
