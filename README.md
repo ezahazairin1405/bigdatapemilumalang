@@ -1,8 +1,8 @@
 # AI PEMILU
 
 Basis pengetahuan pemilu berdiri sendiri: upload PDF terus-menerus (dikelompokkan
-per tema yang ditentukan sendiri oleh admin), lalu tanya-jawab (Elaborasi Data)
-dan analisis peta/grafik (Infografis) per tema — cakupan pemilu se-Indonesia.
+per tema yang ditentukan sendiri oleh admin), lalu tanya-jawab & analisis
+(Infografis & Analisa) per tema — cakupan pemilu se-Indonesia.
 
 **Versi ini (v2)** — perubahan besar dari draf pertama:
 - Isi PDF diekstrak **teks lengkapnya** (bukan diringkas) pakai pdf.js di
@@ -23,22 +23,24 @@ dan analisis peta/grafik (Infografis) per tema — cakupan pemilu se-Indonesia.
   penghapusan otomatis (baik karena gagal maupun nama file sama).
 - Gemini API key tetap diisi sendiri per-browser oleh masing-masing orang
   (disimpan di localStorage), bukan disimpan di server.
-- **Bisa pasang key dari 2 provider AI**: Gemini dan OpenRouter (menu "Kelola
-  AI Key"). OpenRouter sendiri adalah gerbang ke ratusan model dari banyak
-  provider (OpenAI, Anthropic, Google, Meta, dll) lewat 1 key, termasuk model
-  gratis (akhiran `:free` di nama modelnya). **Alurnya 2 langkah**: (1) pilih
-  1 "Provider AI aktif" di sidebar -- tanya-jawab/infografis selalu lewat
-  provider itu, tidak otomatis lompat ke provider lain; (2) di provider aktif
-  itu, tiap key punya kuota pemakaian sendiri (default 20x, bisa diubah di
-  modal) -- begitu satu key mencapai kuota atau kena limit sungguhan dari API,
-  otomatis pindah ke key berikutnya DI PROVIDER YANG SAMA. Kalau semua key di
-  provider aktif sudah penuh, muncul pesan error yang jelas -- tinggal reset
-  pemakaian key-nya (tombol "Reset" di modal) atau ganti provider aktif di
-  sidebar. Pengecualian: transkrip PDF hasil scan tetap selalu pakai Gemini
-  (satu-satunya yang mendukung baca PDF di alur ini), apa pun provider
-  aktifnya.
+- **Bisa pasang key dari 3 provider AI**: Gemini, OpenRouter, dan **Cloudflare
+  Workers AI** (menu "Kelola AI Key"). Workers AI **tidak butuh API key sama
+  sekali** -- otomatis pakai akun Cloudflare yang deploy proyek ini, langsung
+  siap pakai tanpa setup apa pun. OpenRouter sendiri adalah gerbang ke
+  ratusan model dari banyak provider (OpenAI, Anthropic, Google, Meta, dll)
+  lewat 1 key, termasuk model gratis. **Alurnya 2 langkah**: (1) pilih 1
+  "Provider AI aktif" di sidebar -- tanya-jawab/infografis selalu lewat
+  provider itu, tidak otomatis lompat ke provider lain; (2) khusus Gemini &
+  OpenRouter (yang butuh key), tiap key punya kuota pemakaian sendiri
+  (default 20x, bisa diubah di modal) -- begitu satu key mencapai kuota atau
+  kena limit sungguhan dari API, otomatis pindah ke key berikutnya DI
+  PROVIDER YANG SAMA. Kalau semua key di provider aktif sudah penuh, muncul
+  pesan error yang jelas -- tinggal reset pemakaian key-nya (tombol "Reset"
+  di modal) atau ganti provider aktif di sidebar. Pengecualian: transkrip PDF
+  hasil scan tetap selalu pakai Gemini (satu-satunya yang mendukung baca PDF
+  di alur ini), apa pun provider aktifnya.
 
-## Catatan penting soal 2 provider AI
+## Catatan penting soal 3 provider AI
 
 - **Gemini** -- dipanggil langsung dari browser (mengizinkan CORS). Satu-satunya
   yang dipakai untuk fallback transkrip PDF hasil scan.
@@ -48,6 +50,17 @@ dan analisis peta/grafik (Infografis) per tema — cakupan pemilu se-Indonesia.
   dikirim dari browser Anda tiap pertanyaan (tidak disimpan permanen di
   server) -- Worker cuma meneruskan permintaannya supaya tidak diblokir CORS,
   bukan menyimpan key-nya.
+- **Cloudflare Workers AI** -- dipanggil lewat *binding* `env.AI` (bukan API
+  key), jadi WAJIB lewat proxy Worker (`/api/proxy/workersai`) -- binding ini
+  cuma bisa diakses dari kode Worker, tidak bisa dari browser sama sekali.
+  Perlu binding `"ai": {"binding": "AI"}` di `wrangler.jsonc` (sudah
+  ditambahkan) -- tidak perlu langkah setup lain, aktif begitu di-deploy.
+  Model defaultnya (`@cf/zai-org/glm-4.7-flash`) punya jendela konteks 131 ribu
+  token -- lebih kecil dari Gemini/OpenRouter, jadi provider ini paling cocok
+  untuk tema yang belum terlalu banyak dokumennya. Cloudflare merilis model
+  baru & mempensiunkan yang lama tiap minggu -- cek daftar model teks
+  terbaru di developers.cloudflare.com/workers-ai/models kalau model ini
+  ternyata sudah tidak aktif.
 - **Model OpenRouter pakai alias `openrouter/free`** -- ini router otomatis
   milik OpenRouter sendiri, bukan 1 model tertentu, jadi tetap jalan walau
   daftar model gratis mereka sering berganti-ganti (sempat kena masalah ini
@@ -108,8 +121,14 @@ npx wrangler d1 execute ai-pemilu-db --file=./scripts/seed-admin.sql --remote
 npx wrangler deploy
 ```
 
-Buka URL-nya → login → klik **"Kelola Gemini API Key"** di sidebar (tiap orang
-isi key Gemini miliknya sendiri, disimpan di browser masing-masing).
+Tidak ada langkah setup tambahan untuk Cloudflare Workers AI -- binding
+`"ai"` di `wrangler.jsonc` sudah cukup, langsung aktif begitu di-deploy
+(tersedia di plan Workers Free maupun Paid).
+
+Buka URL-nya → login → klik **"Kelola AI Key"** di sidebar. Cloudflare Workers
+AI sudah langsung siap pakai tanpa isi apa pun; kalau mau pakai Gemini atau
+OpenRouter, tiap orang isi key masing-masing di situ (disimpan di browser
+masing-masing).
 
 ## Struktur proyek
 
@@ -122,7 +141,7 @@ src/index.js              router utama + login/logout/sesi + otorisasi peran
 src/auth.js               hash password, sesi cookie, cek peran
 src/routes/               handler API: themes, documents, tps, geo (proxy BIG)
 public/login.html          halaman login
-public/app.html             halaman utama (3 tab, Tab 1 disembunyikan untuk non-admin)
+public/app.html             halaman utama (2 tab, Tab Input Data disembunyikan untuk non-admin)
 public/api.js                panggilan ke backend Worker kita sendiri
 public/gemini.js             ekstraksi teks (pdf.js), tanya-jawab, infografis
 public/app.js                 logika UI ketiga tab + peran
