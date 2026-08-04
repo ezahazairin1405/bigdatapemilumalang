@@ -48,11 +48,12 @@ dan analisis peta/grafik (Infografis) per tema — cakupan pemilu se-Indonesia.
   dikirim dari browser Anda tiap pertanyaan (tidak disimpan permanen di
   server) -- Worker cuma meneruskan permintaannya supaya tidak diblokir CORS,
   bukan menyimpan key-nya.
-- **Model gratis OpenRouter sering berganti** -- default yang dipakai sekarang
-  (`meta-llama/llama-3.3-70b-instruct:free`) bisa saja sudah tidak aktif kalau
-  Anda baca ini beberapa bulan kemudian. Cek daftar model gratis terbaru di
-  openrouter.ai/models, lalu ganti nilai `model` untuk provider `openrouter`
-  di `public/gemini.js` kalau perlu.
+- **Model OpenRouter pakai alias `openrouter/free`** -- ini router otomatis
+  milik OpenRouter sendiri, bukan 1 model tertentu, jadi tetap jalan walau
+  daftar model gratis mereka sering berganti-ganti (sempat kena masalah ini
+  di percobaan pertama pakai nama model spesifik). Kalau suatu saat ingin
+  model tertentu yang lebih terjamin kualitasnya, cek openrouter.ai/models
+  dan ganti nilai `model` untuk provider `openrouter` di `public/gemini.js`.
 - Kalau mau kapasitas yang benar-benar bertambah (bukan cuma "kelihatan" ada
   banyak key), pastikan key Gemini/OpenRouter Anda masing-masing dari **akun
   yang benar-benar berbeda** -- kuota dihitung per akun/project, bukan per key.
