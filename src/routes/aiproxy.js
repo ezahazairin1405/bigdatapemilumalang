@@ -22,3 +22,24 @@ export async function proxyOpenAiCompatible(request, baseUrl) {
   const text = await res.text();
   return new Response(text, { status: res.status, headers: { "content-type": "application/json" } });
 }
+
+// Cloudflare Workers AI -- TIDAK perlu API key sama sekali, dipanggil lewat
+// binding env.AI yang otomatis terhubung ke akun Cloudflare yang deploy
+// proyek ini. Wajib lewat server (binding cuma bisa diakses dari Worker,
+// tidak bisa dari browser).
+export async function proxyWorkersAi(request, env) {
+  const body = await request.json().catch(() => ({}));
+  const { model, prompt } = body;
+  if (!model || !prompt) {
+    return json({ error: "model dan prompt wajib diisi." }, 400);
+  }
+
+  try {
+    const result = await env.AI.run(model, {
+      messages: [{ role: "user", content: prompt }],
+    });
+    return json({ text: result.response || "" });
+  } catch (err) {
+    return json({ error: err.message }, 500);
+  }
+}
