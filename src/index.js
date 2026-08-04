@@ -12,7 +12,7 @@ import { listThemes, createTheme } from "./routes/themes.js";
 import { listDocuments, createDocument, updateDocument, deleteDocument, moveDocument } from "./routes/documents.js";
 import { saveTpsVotes, listTpsVotes } from "./routes/tps.js";
 import { getKelurahanBoundaries } from "./routes/geo.js";
-import { proxyOpenAiCompatible } from "./routes/aiproxy.js";
+import { proxyOpenAiCompatible, proxyWorkersAi } from "./routes/aiproxy.js";
 
 export default {
   async fetch(request, env) {
@@ -62,6 +62,9 @@ export default {
         }
         if (pathname === "/api/proxy/openrouter" && request.method === "POST") {
           return await proxyOpenAiCompatible(request, "https://openrouter.ai/api/v1");
+        }
+        if (pathname === "/api/proxy/workersai" && request.method === "POST") {
+          return await proxyWorkersAi(request, env);
         }
 
         // Sisanya (buat/ubah/hapus tema, dokumen, data TPS) khusus admin.
