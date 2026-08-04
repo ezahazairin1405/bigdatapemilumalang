@@ -1,8 +1,9 @@
 # AI PEMILU
 
 Basis pengetahuan pemilu berdiri sendiri: upload PDF terus-menerus (dikelompokkan
-per tema yang ditentukan sendiri oleh admin), lalu tanya-jawab & analisis
-(Infografis & Analisa) per tema — cakupan pemilu se-Indonesia.
+per tema yang ditentukan sendiri oleh admin), lalu tanya-jawab bebas dengan AI
+(Elaborasi Data) dan dashboard data suara murni tanpa AI (Infografis) per
+tema — cakupan pemilu se-Indonesia.
 
 **Versi ini (v2)** — perubahan besar dari draf pertama:
 - Isi PDF diekstrak **teks lengkapnya** (bukan diringkas) pakai pdf.js di
@@ -141,10 +142,11 @@ src/index.js              router utama + login/logout/sesi + otorisasi peran
 src/auth.js               hash password, sesi cookie, cek peran
 src/routes/               handler API: themes, documents, tps, geo (proxy BIG)
 public/login.html          halaman login
-public/app.html             halaman utama (2 tab, Tab Input Data disembunyikan untuk non-admin)
+public/app.html             halaman utama (3 tab, Tab Input Data disembunyikan untuk non-admin)
 public/api.js                panggilan ke backend Worker kita sendiri
-public/gemini.js             ekstraksi teks (pdf.js), tanya-jawab, infografis
-public/app.js                 logika UI ketiga tab + peran
+public/gemini.js             ekstraksi teks (pdf.js), AI untuk Tab Elaborasi Data
+public/infografis.js          dashboard Tab Infografis -- TANPA AI, murni agregasi data
+public/app.js                  logika UI ketiga tab + peran
 ```
 
 ## Konsekuensi yang perlu diketahui
@@ -171,9 +173,39 @@ public/app.js                 logika UI ketiga tab + peran
   tapi tabel dengan tata letak sangat kompleks (banyak kolom bertumpuk) kadang
   urutannya masih bisa sedikit meleset -- kalau nanti ditemukan kasus begitu,
   ceritakan contohnya supaya logika rekonstruksi barisnya bisa disempurnakan.
-- **Ekstraksi data suara TPS** (untuk Tab Infografis) masih lewat 1 panggilan
-  Gemini per dokumen saat upload -- kalau dokumennya tidak berisi tabel suara,
-  otomatis dilewati (tidak menggagalkan upload).
+- **Ekstraksi data suara TPS** (dipakai Tab Infografis) lewat 1 panggilan AI
+  per dokumen saat upload -- sekarang termasuk rincian **per caleg**, bukan
+  cuma total partai (`party_votes` per baris sekarang berbentuk
+  `{"Partai A": {"total": 0, "caleg": {"Nama Caleg": 0}}}`, bukan cuma angka
+  polos lagi). Kalau dokumennya tidak berisi tabel suara, otomatis dilewati
+  (tidak menggagalkan upload). Kalau tidak ada rincian caleg di dokumen
+  (cuma total partai), field `caleg` dibiarkan kosong -- Tab Infografis tetap
+  jalan, cuma bagian "Profil Caleg"-nya tidak muncul untuk partai itu.
+- **Dokumen yang diunggah SEBELUM perubahan ini** cuma punya total partai
+  (format lama, angka polos) -- masih terbaca normal di Tab Infografis (total
+  partai & wilayah tetap tampil), tapi tidak ada data caleg-nya sampai
+  dokumen itu diunggah ulang.
+- **Kedalaman drill-down (kecamatan/kelurahan/TPS) mengikuti data dokumennya
+  apa adanya** -- kalau dokumen cuma rekap sampai level kecamatan, drill-down
+  di Infografis otomatis berhenti di situ (tidak dipaksakan/dikarang sampai
+  level kelurahan/TPS).
+
+## Tab Infografis -- murni olah data, TANPA AI
+
+Beda dari Tab Elaborasi Data, Tab Infografis (`public/infografis.js`) sama
+sekali **tidak memanggil AI** -- semua angka (total per partai, per caleg, per
+kecamatan/kelurahan/TPS) dihitung langsung dari data `tps_votes` yang sudah
+tersimpan, murni agregasi JavaScript biasa di browser. Alurnya: Ringkasan
+(daftar semua partai, diurutkan dari suara terbanyak) → klik partai → detail
+partai (total, profil caleg, sebaran wilayah bisa di-klik untuk expand
+kecamatan → kelurahan → TPS) → klik caleg → detail caleg (breakdown wilayah
+yang sama, khusus suara caleg itu). Karena tidak ada panggilan AI, tab ini
+tidak kena limit/kuota provider AI sama sekali dan hasilnya selalu 100%
+sesuai data yang tersimpan (tidak ada risiko salah hitung dari AI).
+
+Tampilan lain yang ada di dashboard referensi (Basis Wilayah top/bottom,
+perbandingan vs partai lain, Split Ticket) belum dibangun di versi ini --
+menyusul belakangan sesuai kebutuhan & data yang tersedia.
 
 ## Hal yang perlu diverifikasi
 
