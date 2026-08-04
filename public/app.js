@@ -18,9 +18,9 @@ let themesCache = [];
     const inputTabBtn = document.querySelector('.tab-btn[data-tab="input"]');
     if (inputTabBtn) inputTabBtn.remove();
     document.getElementById("tab-input")?.remove();
-    // Kalau tab aktif defaultnya input, pindah ke Infografis & Analisa.
-    document.querySelector('.tab-btn[data-tab="infografis"]')?.classList.add("active");
-    document.getElementById("tab-infografis")?.classList.add("active");
+    // Kalau tab aktif defaultnya input, pindah ke Elaborasi Data.
+    document.querySelector('.tab-btn[data-tab="elaborasi"]')?.classList.add("active");
+    document.getElementById("tab-elaborasi")?.classList.add("active");
   }
 
   document.getElementById("logoutBtn").addEventListener("click", async () => {
@@ -33,7 +33,8 @@ let themesCache = [];
   setupProviderSelect();
   await refreshThemes();
   if (currentRole === "admin") setupTab1();
-  setupTab3();
+  setupElaborasi();
+  setupInfografisDashboard();
 })();
 
 function setupTabs() {
@@ -165,7 +166,7 @@ async function refreshThemes() {
     .map((t) => `<option value="${t.id}">${escapeHtml(t.name)} (${t.document_count}/15${t.document_count >= 15 ? " · PENUH" : ""})</option>`)
     .join("");
 
-  for (const id of ["themeSelect", "infografisThemeSelect"]) {
+  for (const id of ["themeSelect", "elaborasiThemeSelect", "infografisThemeSelect"]) {
     const el = document.getElementById(id);
     if (!el) continue;
     const current = el.value;
@@ -367,16 +368,16 @@ async function renderThemeGroups() {
   }
 }
 
-// ================= TAB 2: Infografis & Analisa =================
+// ================= TAB 2: Elaborasi Data (hasil AI) =================
 let leafletMap = null;
 let leafletLayer = null;
 let currentChart = null;
 
-function setupTab3() {
-  const select = document.getElementById("infografisThemeSelect");
-  const empty = document.getElementById("infografisEmpty");
-  const body = document.getElementById("infografisBody");
-  const form = document.getElementById("infografisForm");
+function setupElaborasi() {
+  const select = document.getElementById("elaborasiThemeSelect");
+  const empty = document.getElementById("elaborasiEmpty");
+  const body = document.getElementById("elaborasiBody");
+  const form = document.getElementById("elaborasiForm");
   let activeThemeId = null;
   let activeDocs = [];
   let activeTps = [];
@@ -390,34 +391,34 @@ function setupTab3() {
     ]);
     empty.style.display = "none";
     body.style.display = "block";
-    document.getElementById("infografisResult").innerHTML = "";
+    document.getElementById("elaborasiResult").innerHTML = "";
   });
 
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
-    const input = document.getElementById("infografisInput");
+    const input = document.getElementById("elaborasiInput");
     const question = input.value.trim();
     if (!question || !activeThemeId) return;
 
-    const resultEl = document.getElementById("infografisResult");
+    const resultEl = document.getElementById("elaborasiResult");
     resultEl.innerHTML = `<div class="empty-hint">Membaca seluruh dokumen & menganalisis…</div>`;
 
     try {
       const result = await geminiInfografis(themeName(activeThemeId), activeDocs, activeTps, question);
-      renderInfografis(result);
+      renderElaborasiResult(result);
     } catch (err) {
       resultEl.innerHTML = `<div class="empty-hint" style="color:var(--danger);">Gagal: ${escapeHtml(err.message)}</div>`;
     }
   });
 }
 
-function renderInfografis(result) {
-  const resultEl = document.getElementById("infografisResult");
+function renderElaborasiResult(result) {
+  const resultEl = document.getElementById("elaborasiResult");
   resultEl.innerHTML = `
     <p style="line-height:1.6;">${escapeHtml(result.narrative || "")}</p>
     <div class="metric-row" id="metricRow"></div>
     <div id="mapContainer"></div>
-    <div id="chartContainer"><canvas id="infografisChart" height="90"></canvas></div>
+    <div id="chartContainer"><canvas id="elaborasiChart" height="90"></canvas></div>
   `;
 
   const metricRow = document.getElementById("metricRow");
@@ -433,7 +434,7 @@ function renderInfografis(result) {
 
   const chartData = result.chart;
   if (chartData && chartData.labels && chartData.labels.length) {
-    const ctx = document.getElementById("infografisChart");
+    const ctx = document.getElementById("elaborasiChart");
     if (currentChart) currentChart.destroy();
     currentChart = new Chart(ctx, {
       type: chartData.type || "bar",

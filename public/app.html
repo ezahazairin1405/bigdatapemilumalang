@@ -159,16 +159,10 @@
   }
   .theme-select-bar select{min-width:240px;}
 
-  .messages{display:flex;flex-direction:column;gap:14px;margin-bottom:16px;}
-  .msg{max-width:78%;padding:11px 15px;border-radius:10px;font-size:0.9rem;line-height:1.5;}
-  .msg.user{align-self:flex-end;background:var(--accent);color:#0B1420;border-radius:10px 10px 2px 10px;}
-  .msg.bot{align-self:flex-start;background:var(--panel);border:1px solid var(--border);border-radius:10px 10px 10px 2px;}
-  .msg .badge{margin-top:8px;}
-
   .ask-form{display:flex;gap:10px;}
   .ask-form input{flex:1;}
 
-  /* ---------- Tab 3: infografis ---------- */
+  /* ---------- Tab 2: Elaborasi Data (hasil AI -- metrik/chart/peta) ---------- */
   #mapContainer{height:380px;border-radius:10px;border:1px solid var(--border);margin:18px 0;}
   #chartContainer{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:16px;}
   .metric-row{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:18px;}
@@ -180,6 +174,57 @@
   .metric-card .label{font-size:0.75rem;color:var(--text-muted);margin-top:2px;}
 
   .empty-hint{color:var(--text-muted);font-size:0.85rem;font-style:italic;}
+
+  /* ---------- Tab 3: Infografis (dashboard data murni, tanpa AI) ---------- */
+  .ig-breadcrumb{display:flex;align-items:center;gap:6px;font-size:0.82rem;color:var(--text-muted);margin-bottom:18px;flex-wrap:wrap;}
+  .ig-breadcrumb button{background:transparent;border:none;color:var(--accent);cursor:pointer;font-size:0.82rem;padding:0;}
+  .ig-breadcrumb button:hover{text-decoration:underline;}
+  .ig-breadcrumb .sep{color:var(--border);}
+  .ig-breadcrumb .current{color:var(--text);font-weight:600;}
+
+  .ig-party-list{display:flex;flex-direction:column;gap:8px;}
+  .ig-party-card{
+    display:flex;align-items:center;gap:14px;
+    background:var(--panel);border:1px solid var(--border);border-radius:10px;
+    padding:14px 16px;cursor:pointer;text-align:left;width:100%;color:var(--text);
+    font-family:inherit;
+  }
+  .ig-party-card:hover{border-color:var(--accent);}
+  .ig-party-card .rank{font-family:'IBM Plex Mono';color:var(--text-muted);width:24px;flex-shrink:0;}
+  .ig-party-card .name{flex:1;font-weight:600;}
+  .ig-party-card .votes{font-family:'Space Grotesk';font-weight:700;font-size:1.05rem;}
+  .ig-party-card .pct{font-family:'IBM Plex Mono';color:var(--accent);font-size:0.78rem;min-width:52px;text-align:right;}
+  .ig-bar-track{height:6px;border-radius:3px;background:var(--panel-2);overflow:hidden;flex:0 0 90px;}
+  .ig-bar-fill{height:100%;background:var(--accent);}
+
+  .ig-section-title{font-family:'Space Grotesk';font-size:0.95rem;font-weight:600;margin:24px 0 10px;}
+  .ig-section-title:first-child{margin-top:0;}
+
+  .ig-caleg-list{display:flex;flex-direction:column;gap:6px;}
+  .ig-caleg-row{
+    display:flex;align-items:center;gap:12px;
+    background:var(--panel);border:1px solid var(--border);border-left:3px solid var(--amber);
+    border-radius:6px;padding:9px 12px;cursor:pointer;text-align:left;width:100%;color:var(--text);
+    font-family:inherit;font-size:0.85rem;
+  }
+  .ig-caleg-row:hover{border-color:var(--amber);}
+  .ig-caleg-row .rank{font-family:'IBM Plex Mono';color:var(--text-muted);width:20px;}
+  .ig-caleg-row .name{flex:1;}
+  .ig-caleg-row .votes{font-family:'IBM Plex Mono';font-weight:600;}
+
+  .ig-tree{display:flex;flex-direction:column;gap:6px;}
+  .ig-tree-node{background:var(--panel);border:1px solid var(--border);border-radius:8px;overflow:hidden;}
+  .ig-tree-header{
+    width:100%;display:flex;align-items:center;gap:10px;
+    background:transparent;border:none;color:var(--text);
+    padding:10px 12px;cursor:pointer;font-size:0.85rem;text-align:left;
+  }
+  .ig-tree-header:hover{background:var(--panel-2);}
+  .ig-tree-header .chevron{color:var(--accent);width:12px;flex-shrink:0;}
+  .ig-tree-header .name{flex:1;}
+  .ig-tree-header .votes{font-family:'IBM Plex Mono';color:var(--text-muted);}
+  .ig-tree-body{padding:0 12px 10px 32px;display:none;}
+  .ig-leaf{font-size:0.8rem;color:var(--text-muted);padding:5px 12px 5px 32px;display:flex;justify-content:space-between;}
 
   .provider-section{margin-top:18px;padding-top:14px;border-top:1px solid var(--border);}
   .provider-section:first-child{margin-top:0;padding-top:0;border-top:none;}
@@ -238,53 +283,50 @@
     <div class="theme-groups" id="themeGroups"></div>
   </section>
 
-  <!-- ===== TAB 2: ELABORASI DATA ===== -->
+  <!-- ===== TAB 2: ELABORASI DATA (tanya-jawab AI) ===== -->
   <section class="tab-panel" id="tab-elaborasi">
     <div class="panel-header">
       <h1>Elaborasi Data</h1>
-      <p>Pilih kode tema, lalu ajukan pertanyaan bebas dalam lingkup dokumen tema tersebut.</p>
+      <p>Pilih tema, lalu ajukan pertanyaan bebas atau analitis — jawabannya otomatis dilengkapi metrik/grafik/peta kalau relevan.</p>
     </div>
 
     <div class="theme-select-bar">
       <select id="elaborasiThemeSelect"><option value="">— Pilih tema —</option></select>
     </div>
 
-    <div id="elaborasiEmpty" class="empty-hint">Pilih tema dulu untuk mulai bertanya.</div>
+    <div id="elaborasiEmpty" class="empty-hint">Pilih tema dulu untuk mulai bertanya/menganalisis.</div>
 
-    <div id="elaborasiChat" style="display:none;">
-      <div class="messages" id="elaborasiMessages"></div>
-      <form class="ask-form" id="elaborasiForm">
-        <input type="text" id="elaborasiInput" placeholder="Tulis pertanyaan Anda…" autocomplete="off" />
+    <div id="elaborasiBody" style="display:none;">
+      <form class="ask-form" id="elaborasiForm" style="margin-bottom:20px;">
+        <input type="text" id="elaborasiInput" placeholder="Tulis pertanyaan Anda — bebas maupun analitis (mis. wilayah mana yang berpotensi menang untuk Partai A?)" autocomplete="off" />
         <button class="btn btn-primary" type="submit">Tanya</button>
       </form>
+
+      <div id="elaborasiResult"></div>
     </div>
   </section>
 
-  <!-- ===== TAB 3: INFOGRAFIS ===== -->
+  <!-- ===== TAB 3: INFOGRAFIS (dashboard data murni, TANPA AI) ===== -->
   <section class="tab-panel" id="tab-infografis">
     <div class="panel-header">
       <h1>Infografis</h1>
-      <p>Pilih kode tema, ajukan pertanyaan analitis — hasilnya digambar sebagai peta &amp; grafik.</p>
+      <p>Data suara terstruktur per tema, dihitung langsung dari data yang sudah diunggah (bukan AI) — jelajahi per partai, caleg, kecamatan, kelurahan, hingga TPS.</p>
     </div>
 
     <div class="theme-select-bar">
       <select id="infografisThemeSelect"><option value="">— Pilih tema —</option></select>
     </div>
 
-    <div id="infografisEmpty" class="empty-hint">Pilih tema dulu untuk mulai menganalisis.</div>
+    <div id="infografisEmpty" class="empty-hint">Pilih tema dulu untuk melihat data.</div>
 
     <div id="infografisBody" style="display:none;">
-      <form class="ask-form" id="infografisForm" style="margin-bottom:20px;">
-        <input type="text" id="infografisInput" placeholder="Contoh: wilayah mana yang berpotensi menang untuk Partai A?" autocomplete="off" />
-        <button class="btn btn-primary" type="submit">Analisis</button>
-      </form>
-
-      <div id="infografisResult"></div>
+      <div id="infografisBreadcrumb" class="ig-breadcrumb"></div>
+      <div id="infografisContent"></div>
     </div>
   </section>
 </main>
 
-<!-- Modal kelola AI key (Gemini/Claude/Groq) -->
+<!-- Modal kelola AI key (Gemini/OpenRouter/Cloudflare Workers AI) -->
 <div id="keyModalOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.55);align-items:center;justify-content:center;z-index:50;overflow-y:auto;padding:30px 0;">
   <div style="background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:24px;width:100%;max-width:460px;">
     <h2 style="margin-top:0;">Kelola AI Key</h2>
@@ -308,6 +350,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
 <script src="/api.js"></script>
 <script src="/gemini.js"></script>
+<script src="/infografis.js"></script>
 <script src="/app.js"></script>
 </body>
 </html>

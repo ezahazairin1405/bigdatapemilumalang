@@ -5,7 +5,7 @@
 //
 // AI (Gemini/OpenRouter/Cloudflare Workers AI) dipakai untuk: (1) fallback
 // transkrip kalau PDF hasil scan/gambar, (2) ekstrak tabel suara TPS dari
-// teks, (3) menjawab pertanyaan di Tab Infografis & Analisa.
+// teks, (3) menjawab pertanyaan di Tab Elaborasi Data.
 //
 // Cara pakainya: pilih 1 PROVIDER AKTIF (lewat sidebar). Gemini & OpenRouter
 // butuh API key (bisa lebih dari 1, tiap key dianggap "penuh" setelah
@@ -367,10 +367,27 @@ Berikut isi teks lengkap sebuah dokumen pemilu:
 ${fullText.slice(0, 150000)}
 """
 
-Kalau dokumen ini berisi tabel hasil suara per TPS dan/atau per partai, ekstrak jadi JSON array
-dengan struktur persis:
-[{"provinsi":"","kabupaten":"","kecamatan":"","kelurahan":"","tps_no":"","party_votes":{"Partai A": 0}}]
-Kalau TIDAK ada data semacam itu di dokumen ini, balas array kosong: []
+Kalau dokumen ini berisi tabel hasil suara (per TPS, kelurahan, dan/atau kecamatan) per partai
+dan/atau per calon legislatif (caleg), ekstrak jadi JSON array dengan struktur persis:
+[{
+  "provinsi": "", "kabupaten": "", "kecamatan": "", "kelurahan": "", "tps_no": "",
+  "party_votes": {
+    "Nama Partai": {
+      "total": 0,
+      "caleg": { "Nama Caleg 1": 0, "Nama Caleg 2": 0 }
+    }
+  }
+}]
+ATURAN:
+- "kelurahan" dan "tps_no" diisi HANYA kalau memang ada di dokumen pada level itu -- kalau
+  dokumennya cuma rekap sampai level kecamatan, biarkan "kelurahan" dan "tps_no" kosong string.
+  JANGAN mengarang/menduga nilai untuk level yang tidak ada datanya di dokumen.
+- "caleg" diisi HANYA kalau dokumen memang mencantumkan rincian nama & suara tiap calon
+  perorangan (bukan cuma total partai/gabungan) -- kalau tidak ada, biarkan objek "caleg" kosong {}.
+- Angka "total" partai harus konsisten dengan penjumlahan suara partai (bukan cuma suara caleg saja)
+  kalau dokumen membedakan keduanya.
+- Kalau dokumen berisi banyak baris (misal per kecamatan dalam 1 dapil), buat 1 entri array per baris.
+- Kalau TIDAK ada data suara semacam ini di dokumen, balas array kosong: []
 Balas HANYA JSON array tersebut, tanpa markdown apa pun.`;
 
   try {
@@ -381,7 +398,7 @@ Balas HANYA JSON array tersebut, tanpa markdown apa pun.`;
   }
 }
 
-// --- Infografis & Analisa: tanya bebas ATAU analitis, SEMUA dokumen di tema dikirim utuh ---
+// --- Elaborasi Data: tanya bebas ATAU analitis, SEMUA dokumen di tema dikirim utuh ---
 async function geminiInfografis(themeNameValue, documents, tpsRows, question) {
   const context = documents
     .filter((d) => d.full_text)
