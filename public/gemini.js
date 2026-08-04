@@ -3,7 +3,7 @@
 // supaya angka di tabel akurat, bukan hasil "baca lalu tulis ulang" yang
 // rawan salah ketik.
 //
-// AI (Gemini/Claude/Groq/Grok) dipakai untuk: (1) fallback transkrip kalau PDF
+// AI (Gemini/OpenRouter) dipakai untuk: (1) fallback transkrip kalau PDF
 // hasil scan/gambar, (2) ekstrak tabel suara TPS dari teks, (3) menjawab
 // pertanyaan di Tab 2/3.
 //
@@ -14,17 +14,16 @@
 // limit sungguhan dari API. Kalau semua key di provider aktif penuh, perlu
 // direset manual atau pindah provider aktif -- tidak otomatis lompat ke
 // provider lain (supaya pemakaian tetap sesuai provider yang Anda pilih).
-// Pengecualian: transkrip PDF hasil scan cuma didukung Gemini & Claude, jadi
-// untuk itu selalu dicoba keduanya apa pun provider aktifnya.
+// Pengecualian: transkrip PDF hasil scan cuma didukung Gemini, jadi untuk itu
+// selalu dipakai Gemini apa pun provider aktifnya.
 //
 // [VERIFIKASI] Nama model tiap provider di bawah ini sebaiknya dicek ulang
-// terhadap model yang aktif saat ini (penamaan model berubah dari waktu ke
-// waktu untuk tiap provider).
+// terhadap model yang aktif saat ini. Khusus OpenRouter, daftar model
+// GRATIS-nya (akhiran ":free") sering berputar/berubah -- cek daftar
+// terbaru di openrouter.ai/models kalau model di bawah ini sudah tidak aktif.
 const PROVIDERS = [
   { id: "gemini", label: "Gemini", model: "gemini-flash-latest", supportsPdf: true },
-  { id: "claude", label: "Claude", model: "claude-sonnet-5", supportsPdf: true },
-  { id: "groq", label: "Groq", model: "openai/gpt-oss-120b", supportsPdf: false },
-  { id: "grok", label: "Grok (xAI)", model: "grok-4.3", supportsPdf: false },
+  { id: "openrouter", label: "OpenRouter", model: "meta-llama/llama-3.3-70b-instruct:free", supportsPdf: false },
 ];
 
 const DEFAULT_QUOTA = 20;
@@ -145,26 +144,11 @@ async function callGeminiRaw(key, model, textPrompt, base64Pdf, json) {
   return { ok: true, text };
 }
 
-// Claude, Groq, dan Grok tidak selalu mengizinkan dipanggil langsung dari
-// browser (CORS) -- diteruskan lewat proxy di Worker kita sendiri. Key API
-// tetap dikirim dari browser tiap request, TIDAK disimpan di server.
-async function callClaudeRaw(key, model, textPrompt, base64Pdf) {
-  const res = await fetch("/api/proxy/claude", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ apiKey: key, model, prompt: textPrompt, base64Pdf }),
-  });
-  const bodyText = await res.text();
-  if (!res.ok) return { ok: false, status: res.status, detail: bodyText.slice(0, 400) };
-  const data = JSON.parse(bodyText);
-  const text = (data.content || []).map((b) => b.text || "").join("");
-  return { ok: true, text };
-}
-
-// Format kompatibel OpenAI (Groq & Grok/xAI sama-sama pakai ini), diteruskan
-// lewat proxy Worker kita juga.
-async function callOpenAiCompatibleProxied(proxyPath, key, model, textPrompt, json) {
-  const res = await fetch(proxyPath, {
+// OpenRouter tidak selalu mengizinkan dipanggil langsung dari browser (CORS)
+// -- diteruskan lewat proxy di Worker kita sendiri. Key API tetap dikirim
+// dari browser tiap request, TIDAK disimpan di server.
+async function callOpenRouterRaw(key, model, textPrompt, json) {
+  const res = await fetch("/api/proxy/openrouter", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ apiKey: key, model, prompt: textPrompt, json }),
@@ -176,20 +160,10 @@ async function callOpenAiCompatibleProxied(proxyPath, key, model, textPrompt, js
   return { ok: true, text };
 }
 
-async function callGroqRaw(key, model, textPrompt, json) {
-  return callOpenAiCompatibleProxied("/api/proxy/groq", key, model, textPrompt, json);
-}
-
-async function callGrokRaw(key, model, textPrompt, json) {
-  return callOpenAiCompatibleProxied("/api/proxy/grok", key, model, textPrompt, json);
-}
-
-// ---------- Pemanggil terpadu: coba semua key yang terpasang, lintas provider ----------
-// Urutan: Gemini -> Claude -> Groq. Kalau ada PDF yang perlu dibaca (base64Pdf),
-// Groq dilewati (tidak mendukung pembacaan PDF di alur ini).
+// ---------- Pemanggil terpadu: coba semua key yang terpasang di provider aktif ----------
 async function callAI(textPrompt, { json = false, base64Pdf = null } = {}) {
-  // Transkrip PDF hasil scan cuma didukung Gemini & Claude -- untuk kasus ini
-  // dicoba keduanya apa pun provider aktifnya. Selain itu, cuma provider aktif
+  // Transkrip PDF hasil scan cuma didukung Gemini -- untuk kasus ini selalu
+  // pakai Gemini apa pun provider aktifnya. Selain itu, cuma provider aktif
   // yang dicoba (tidak lompat ke provider lain secara otomatis).
   const candidateProviders = base64Pdf
     ? PROVIDERS.filter((p) => p.supportsPdf)
@@ -219,12 +193,8 @@ async function callAI(textPrompt, { json = false, base64Pdf = null } = {}) {
         let result;
         if (provider.id === "gemini") {
           result = await callGeminiRaw(keyObj.key, provider.model, textPrompt, base64Pdf, json);
-        } else if (provider.id === "claude") {
-          result = await callClaudeRaw(keyObj.key, provider.model, textPrompt, base64Pdf);
-        } else if (provider.id === "groq") {
-          result = await callGroqRaw(keyObj.key, provider.model, textPrompt, json);
         } else {
-          result = await callGrokRaw(keyObj.key, provider.model, textPrompt, json);
+          result = await callOpenRouterRaw(keyObj.key, provider.model, textPrompt, json);
         }
 
         if (!result.ok) {

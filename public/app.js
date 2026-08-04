@@ -67,9 +67,7 @@ function setupKeyModal() {
 
   const providerHints = {
     gemini: "Model: " + PROVIDERS.find((p) => p.id === "gemini").model + " · aistudio.google.com",
-    claude: "Model: " + PROVIDERS.find((p) => p.id === "claude").model + " · console.anthropic.com",
-    groq: "Model: " + PROVIDERS.find((p) => p.id === "groq").model + " · console.groq.com (teks saja, tidak baca PDF scan)",
-    grok: "Model: " + PROVIDERS.find((p) => p.id === "grok").model + " · console.x.ai (teks saja, tidak baca PDF scan)",
+    openrouter: "Model: " + PROVIDERS.find((p) => p.id === "openrouter").model + " · openrouter.ai/keys (teks saja, tidak baca PDF scan)",
   };
 
   function renderAll() {
