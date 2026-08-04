@@ -8,8 +8,8 @@ import {
   requireAdmin,
 } from "./auth.js";
 import { json } from "./utils.js";
-import { listThemes, createTheme } from "./routes/themes.js";
-import { listDocuments, createDocument, updateDocument, deleteDocument, moveDocument } from "./routes/documents.js";
+import { listThemes, createTheme, deleteTheme } from "./routes/themes.js";
+import { listDocuments, createDocument, updateDocument, deleteDocument, moveDocument, duplicateDocumentToAiTheme } from "./routes/documents.js";
 import { saveTpsVotes, listTpsVotes } from "./routes/tps.js";
 import { getKelurahanBoundaries } from "./routes/geo.js";
 import { proxyOpenAiCompatible, proxyWorkersAi } from "./routes/aiproxy.js";
@@ -74,6 +74,10 @@ export default {
         if (pathname === "/api/themes" && request.method === "POST") {
           return await createTheme(request, env);
         }
+        const themeMatch = pathname.match(/^\/api\/themes\/(\d+)$/);
+        if (themeMatch && request.method === "DELETE") {
+          return await deleteTheme(env, themeMatch[1]);
+        }
         if (pathname === "/api/documents" && request.method === "POST") {
           return await createDocument(request, env);
         }
@@ -88,6 +92,11 @@ export default {
         if (moveMatch && request.method === "POST") {
           const body = await request.json().catch(() => ({}));
           return await moveDocument(env, moveMatch[1], body.theme_id);
+        }
+        const dupMatch = pathname.match(/^\/api\/documents\/(\d+)\/duplicate$/);
+        if (dupMatch && request.method === "POST") {
+          const body = await request.json().catch(() => ({}));
+          return await duplicateDocumentToAiTheme(env, dupMatch[1], body.theme_id);
         }
         if (pathname === "/api/tps-votes" && request.method === "POST") {
           return await saveTpsVotes(request, env);
