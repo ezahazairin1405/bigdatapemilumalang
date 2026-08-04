@@ -17,13 +17,14 @@
 // Pengecualian: transkrip PDF hasil scan cuma didukung Gemini, jadi untuk itu
 // selalu dipakai Gemini apa pun provider aktifnya.
 //
-// [VERIFIKASI] Nama model tiap provider di bawah ini sebaiknya dicek ulang
-// terhadap model yang aktif saat ini. Khusus OpenRouter, daftar model
-// GRATIS-nya (akhiran ":free") sering berputar/berubah -- cek daftar
-// terbaru di openrouter.ai/models kalau model di bawah ini sudah tidak aktif.
+// [VERIFIKASI] Nama model Gemini di bawah sebaiknya dicek ulang terhadap
+// model yang aktif saat ini. Untuk OpenRouter dipakai alias "openrouter/free"
+// -- ini BUKAN 1 model tertentu, tapi router otomatis milik OpenRouter sendiri
+// yang selalu memilihkan model gratis yang sedang tersedia, supaya tidak
+// basi lagi walau daftar model gratis mereka sering berubah.
 const PROVIDERS = [
   { id: "gemini", label: "Gemini", model: "gemini-flash-latest", supportsPdf: true },
-  { id: "openrouter", label: "OpenRouter", model: "meta-llama/llama-3.3-70b-instruct:free", supportsPdf: false },
+  { id: "openrouter", label: "OpenRouter", model: "openrouter/free", supportsPdf: false },
 ];
 
 const DEFAULT_QUOTA = 20;
